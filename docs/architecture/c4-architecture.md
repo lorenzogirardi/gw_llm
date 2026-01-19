@@ -58,8 +58,8 @@ C4Container
 
     Container_Boundary(observability, "Observability Stack") {
         Container(prometheus, "Prometheus", "TSDB", "Metrics collection")
-        Container(grafana, "Grafana", "Dashboards", "Visualization")
-        Container(alertmanager, "Alertmanager", "Alerts", "Alert routing")
+        Container(grafana, "Grafana", "Dashboards", "Visualization (local)")
+        Container(datadog, "Datadog", "SaaS", "Monitoring & Alerting (prod)")
     }
 
     Rel(user, kong, "Sends requests", "HTTPS")
@@ -70,7 +70,7 @@ C4Container
     Rel(kong, iam, "AssumeRole", "IRSA")
     Rel(kong, cloudwatch, "PutMetricData", "AWS SDK")
     Rel(kong, prometheus, "Scrapes", "/metrics")
-    Rel(prometheus, alertmanager, "Sends alerts", "Webhook")
+    Rel(prometheus, datadog, "Remote write", "HTTPS")
     Rel(grafana, prometheus, "Queries", "PromQL")
 ```
 

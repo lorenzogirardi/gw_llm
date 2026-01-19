@@ -1,5 +1,7 @@
 # Prometheus Configuration for Kong LLM Gateway
-# Local development environment
+#
+# Local development configuration
+# Alerting is handled by Datadog (not AlertManager)
 
 global:
   scrape_interval: 15s
@@ -8,15 +10,15 @@ global:
     environment: local
     project: kong-llm-gateway
 
-# Alerting (optional - configure AlertManager separately)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: []
-
-# Rule files
-# rule_files:
-#   - /etc/prometheus/rules/*.yml
+# Remote write to Datadog (optional - enable if using Datadog metrics)
+# Requires DD_API_KEY environment variable
+# remote_write:
+#   - url: "https://prometheus-intake.datadoghq.com/api/v1/push"
+#     bearer_token: "${DD_API_KEY}"
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: "kong_.*"
+#         action: keep
 
 # Scrape configurations
 scrape_configs:
@@ -44,10 +46,3 @@ scrape_configs:
           service: mock-bedrock
     metrics_path: /health
     scrape_interval: 30s
-
-  # Redis metrics (requires redis_exporter)
-  # - job_name: 'redis'
-  #   static_configs:
-  #     - targets: ['redis-exporter:9121']
-  #       labels:
-  #         service: redis

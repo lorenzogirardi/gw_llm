@@ -405,7 +405,7 @@ flowchart TB
 
     subgraph Monitoring
         grafana[Grafana<br/>Violations Dashboard]
-        alert[AlertManager<br/>Security Alerts]
+        datadog[Datadog<br/>Security Alerts]
     end
 
     content --> scan
@@ -413,7 +413,7 @@ flowchart TB
     sql & pci & creds & xss & pii -->|Match| log
     log --> metric --> block
     metric --> grafana
-    metric --> alert
+    metric --> datadog
 ```
 
 #### Prometheus Queries for Violations
