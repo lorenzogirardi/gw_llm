@@ -92,6 +92,12 @@ variable "certificate_arn" {
 # Grafana Configuration
 # -----------------------------------------------------------------------------
 
+variable "grafana_image" {
+  description = "Grafana Docker image"
+  type        = string
+  default     = "grafana/grafana:11.0.0"
+}
+
 variable "grafana_auth_providers" {
   description = "Authentication providers for Grafana"
   type        = list(string)
@@ -102,4 +108,10 @@ variable "grafana_admin_user_ids" {
   description = "SSO user IDs for Grafana admin access"
   type        = list(string)
   default     = []
+}
+
+variable "grafana_admin_password_secret_arn" {
+  description = "Secrets Manager ARN for Grafana admin password"
+  type        = string
+  default     = ""
 }

@@ -85,6 +85,10 @@ resource "aws_ecs_task_definition" "grafana" {
         {
           name  = "AWS_REGION"
           value = data.aws_region.current.name
+        },
+        {
+          name  = "AMP_ENDPOINT"
+          value = var.amp_remote_write_endpoint != "" ? replace(var.amp_remote_write_endpoint, "/api/v1/remote_write", "") : ""
         }
       ]
 
@@ -303,14 +307,18 @@ resource "aws_iam_role_policy" "grafana_amp" {
           "aps:QueryMetrics",
           "aps:GetSeries",
           "aps:GetLabels",
-          "aps:GetMetricMetadata"
+          "aps:GetMetricMetadata",
+          "aps:RemoteRead"
         ]
-        Resource = var.amp_workspace_arn
+        Resource = "${var.amp_workspace_arn}/*"
       },
       {
-        Sid    = "AMPListWorkspaces"
+        Sid    = "AMPWorkspace"
         Effect = "Allow"
-        Action = ["aps:ListWorkspaces"]
+        Action = [
+          "aps:DescribeWorkspace",
+          "aps:ListWorkspaces"
+        ]
         Resource = "*"
       }
     ]

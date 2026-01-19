@@ -62,100 +62,185 @@ resource "aws_cloudwatch_log_group" "kong" {
   tags = var.tags
 }
 
+resource "aws_cloudwatch_log_group" "adot" {
+  count             = var.enable_amp_write ? 1 : 0
+  name              = "/ecs/${var.project_name}-${var.environment}/adot"
+  retention_in_days = var.log_retention_days
+
+  tags = var.tags
+}
+
 # -----------------------------------------------------------------------------
 # ECS Task Definition
 # -----------------------------------------------------------------------------
+
+locals {
+  # ADOT collector configuration for scraping Kong metrics and sending to AMP
+  adot_config = var.enable_amp_write ? yamlencode({
+    receivers = {
+      prometheus = {
+        config = {
+          global = {
+            scrape_interval     = "15s"
+            evaluation_interval = "15s"
+          }
+          scrape_configs = [
+            {
+              job_name        = "kong"
+              static_configs  = [{ targets = ["localhost:8100"] }]
+              metrics_path    = "/metrics"
+              scrape_interval = "15s"
+            }
+          ]
+        }
+      }
+    }
+    exporters = {
+      prometheusremotewrite = {
+        endpoint = "https://aps-workspaces.${data.aws_region.current.name}.amazonaws.com/workspaces/${var.amp_workspace_id}/api/v1/remote_write"
+        auth = {
+          authenticator = "sigv4auth"
+        }
+      }
+    }
+    extensions = {
+      sigv4auth = {
+        region  = data.aws_region.current.name
+        service = "aps"
+      }
+    }
+    service = {
+      extensions = ["sigv4auth"]
+      pipelines = {
+        metrics = {
+          receivers  = ["prometheus"]
+          exporters  = ["prometheusremotewrite"]
+        }
+      }
+    }
+  }) : ""
+
+  # Container definitions - Kong + optional ADOT sidecar
+  kong_container = {
+    name      = "kong"
+    image     = var.kong_image
+    essential = true
+
+    portMappings = [
+      {
+        containerPort = 8000
+        hostPort      = 8000
+        protocol      = "tcp"
+      },
+      {
+        containerPort = 8001
+        hostPort      = 8001
+        protocol      = "tcp"
+      },
+      {
+        containerPort = 8100
+        hostPort      = 8100
+        protocol      = "tcp"
+      }
+    ]
+
+    environment = [
+      {
+        name  = "KONG_DATABASE"
+        value = "off"
+      },
+      {
+        name  = "KONG_DECLARATIVE_CONFIG"
+        value = "/kong/kong.yaml"
+      },
+      {
+        name  = "KONG_PROXY_LISTEN"
+        value = "0.0.0.0:8000"
+      },
+      {
+        name  = "KONG_ADMIN_LISTEN"
+        value = "0.0.0.0:8001"
+      },
+      {
+        name  = "KONG_STATUS_LISTEN"
+        value = "0.0.0.0:8100"
+      },
+      {
+        name  = "KONG_PLUGINS"
+        value = "bundled,bedrock-proxy,token-meter,ecommerce-guardrails"
+      },
+      {
+        name  = "KONG_LOG_LEVEL"
+        value = var.kong_log_level
+      },
+      {
+        name  = "AWS_REGION"
+        value = data.aws_region.current.name
+      },
+      {
+        name  = "BEDROCK_ENDPOINT"
+        value = "https://bedrock-runtime.${data.aws_region.current.name}.amazonaws.com"
+      }
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.kong.name
+        "awslogs-region"        = data.aws_region.current.name
+        "awslogs-stream-prefix" = "kong"
+      }
+    }
+
+    healthCheck = {
+      command     = ["CMD-SHELL", "curl -f http://localhost:8100/status || exit 1"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 60
+    }
+  }
+
+  adot_container = var.enable_amp_write ? {
+    name      = "adot-collector"
+    image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
+    essential = false
+
+    command = ["--config", "env:AOT_CONFIG_CONTENT"]
+
+    environment = [
+      {
+        name  = "AOT_CONFIG_CONTENT"
+        value = local.adot_config
+      }
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.adot[0].name
+        "awslogs-region"        = data.aws_region.current.name
+        "awslogs-stream-prefix" = "adot"
+      }
+    }
+  } : null
+
+  container_definitions = concat(
+    [local.kong_container],
+    var.enable_amp_write ? [local.adot_container] : []
+  )
+}
 
 resource "aws_ecs_task_definition" "kong" {
   family                   = "${var.project_name}-kong-${var.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = var.task_cpu
-  memory                   = var.task_memory
+  cpu                      = var.enable_amp_write ? var.task_cpu + 256 : var.task_cpu
+  memory                   = var.enable_amp_write ? var.task_memory + 512 : var.task_memory
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
-  container_definitions = jsonencode([
-    {
-      name      = "kong"
-      image     = var.kong_image
-      essential = true
-
-      portMappings = [
-        {
-          containerPort = 8000
-          hostPort      = 8000
-          protocol      = "tcp"
-        },
-        {
-          containerPort = 8001
-          hostPort      = 8001
-          protocol      = "tcp"
-        },
-        {
-          containerPort = 8100
-          hostPort      = 8100
-          protocol      = "tcp"
-        }
-      ]
-
-      environment = [
-        {
-          name  = "KONG_DATABASE"
-          value = "off"
-        },
-        {
-          name  = "KONG_DECLARATIVE_CONFIG"
-          value = "/kong/kong.yaml"
-        },
-        {
-          name  = "KONG_PROXY_LISTEN"
-          value = "0.0.0.0:8000"
-        },
-        {
-          name  = "KONG_ADMIN_LISTEN"
-          value = "0.0.0.0:8001"
-        },
-        {
-          name  = "KONG_STATUS_LISTEN"
-          value = "0.0.0.0:8100"
-        },
-        {
-          name  = "KONG_PLUGINS"
-          value = "bundled,bedrock-proxy,token-meter,ecommerce-guardrails"
-        },
-        {
-          name  = "KONG_LOG_LEVEL"
-          value = var.kong_log_level
-        },
-        {
-          name  = "AWS_REGION"
-          value = data.aws_region.current.name
-        },
-        {
-          name  = "BEDROCK_ENDPOINT"
-          value = "https://bedrock-runtime.${data.aws_region.current.name}.amazonaws.com"
-        }
-      ]
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.kong.name
-          "awslogs-region"        = data.aws_region.current.name
-          "awslogs-stream-prefix" = "kong"
-        }
-      }
-
-      healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8100/status || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
-    }
-  ])
+  container_definitions = jsonencode(local.container_definitions)
 
   tags = var.tags
 }

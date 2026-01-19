@@ -132,7 +132,7 @@ module "ecs" {
   enable_container_insights = true
   log_retention_days        = 7
   amp_workspace_id          = module.amp.workspace_id
-  enable_amp_write          = true
+  enable_amp_write          = false  # Disabled - ADOT causing issues
 
   # Bedrock models
   allowed_model_arns = [
@@ -162,10 +162,15 @@ module "grafana" {
 
   # ECS
   ecs_cluster_id = module.ecs.cluster_id
+  grafana_image  = var.grafana_image
   use_spot       = true
 
   # AMP integration
-  amp_workspace_arn = module.amp.workspace_arn
+  amp_workspace_arn         = module.amp.workspace_arn
+  amp_remote_write_endpoint = module.amp.remote_write_url
+
+  # Admin password from Secrets Manager
+  grafana_admin_password_secret_arn = var.grafana_admin_password_secret_arn
 
   tags = local.tags
 }

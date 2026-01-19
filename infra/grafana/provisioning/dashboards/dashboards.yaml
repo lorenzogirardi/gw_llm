@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'Kong LLM Gateway'
+    orgId: 1
+    folder: 'Kong LLM Gateway'
+    folderUid: 'kong-llm-gateway'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

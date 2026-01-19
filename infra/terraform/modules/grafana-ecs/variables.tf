@@ -110,3 +110,9 @@ variable "amp_workspace_arn" {
   description = "AMP workspace ARN for Grafana to query"
   type        = string
 }
+
+variable "amp_remote_write_endpoint" {
+  description = "AMP remote write endpoint (used to derive query endpoint for datasource)"
+  type        = string
+  default     = ""
+}
