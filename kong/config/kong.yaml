@@ -1,0 +1,123 @@
+# Kong LLM Gateway - Declarative Configuration
+# DB-less mode configuration for Kong Gateway
+
+_format_version: "3.0"
+_transform: true
+
+# -----------------------------------------------------------------------------
+# Services - Backend LLM endpoints
+# -----------------------------------------------------------------------------
+
+services:
+  - name: bedrock-service
+    url: https://bedrock-runtime.us-west-1.amazonaws.com
+    connect_timeout: 60000
+    read_timeout: 120000
+    write_timeout: 120000
+    retries: 2
+
+# -----------------------------------------------------------------------------
+# Routes - API paths
+# -----------------------------------------------------------------------------
+
+routes:
+  # Chat completions endpoint (OpenAI-compatible)
+  - name: chat-route
+    service: bedrock-service
+    paths:
+      - /v1/chat/completions
+    methods:
+      - POST
+    strip_path: false
+
+  # Model-specific routes
+  - name: claude-opus-route
+    service: bedrock-service
+    paths:
+      - /v1/chat/opus
+    methods:
+      - POST
+    strip_path: true
+
+  - name: claude-sonnet-route
+    service: bedrock-service
+    paths:
+      - /v1/chat/sonnet
+    methods:
+      - POST
+    strip_path: true
+
+  - name: claude-haiku-route
+    service: bedrock-service
+    paths:
+      - /v1/chat/haiku
+    methods:
+      - POST
+    strip_path: true
+
+  # Health check endpoint
+  - name: health-route
+    service: bedrock-service
+    paths:
+      - /health
+    methods:
+      - GET
+    strip_path: true
+
+# -----------------------------------------------------------------------------
+# Plugins - Global configuration
+# -----------------------------------------------------------------------------
+
+plugins:
+  # Prometheus metrics
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+  # Request logging
+  - name: file-log
+    config:
+      path: /dev/stdout
+      reopen: true
+
+  # Rate limiting (global)
+  - name: rate-limiting
+    config:
+      minute: 60
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
+
+# -----------------------------------------------------------------------------
+# Consumers - API consumers (teams/developers)
+# -----------------------------------------------------------------------------
+
+consumers:
+  - username: developer
+    custom_id: dev-team
+
+  - username: production
+    custom_id: prod-team
+
+# -----------------------------------------------------------------------------
+# Consumer Credentials - API Keys
+# -----------------------------------------------------------------------------
+
+keyauth_credentials:
+  - consumer: developer
+    key: dev-api-key-changeme
+
+  - consumer: production
+    key: prod-api-key-changeme
+
+# -----------------------------------------------------------------------------
+# Plugin configurations per route
+# -----------------------------------------------------------------------------
+
+# Bedrock proxy for chat routes
+# Note: These are applied via the route-specific plugin configurations
+
+# Per-route plugins can be added here as needed

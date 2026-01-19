@@ -1,0 +1,39 @@
+# POC Environment - Example Variables
+#
+# Copy this file to terraform.tfvars and customize values
+#
+# cp terraform.tfvars.example terraform.tfvars
+
+# AWS region
+aws_region = "us-west-1"
+
+# VPC Configuration
+# Set create_vpc = false to use existing VPC
+create_vpc = true
+vpc_cidr   = "10.10.0.0/16"
+
+availability_zones   = ["us-west-1a", "us-west-1b"]
+private_subnet_cidrs = ["10.10.1.0/24", "10.10.2.0/24"]
+public_subnet_cidrs  = ["10.10.101.0/24", "10.10.102.0/24"]
+
+# If using existing VPC (create_vpc = false):
+# vpc_id             = "vpc-xxxxxxxxx"
+# private_subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
+# public_subnet_ids  = ["subnet-cccc", "subnet-dddd"]
+
+# Network access (restrict for security)
+allowed_cidr_blocks = ["0.0.0.0/0"]  # Change to your IP range
+
+# Kong configuration
+kong_image = "kong:3.6"
+
+# HTTPS certificate (optional - leave empty for HTTP only)
+# certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/xxxxx"
+certificate_arn = ""
+
+# Grafana authentication
+grafana_auth_providers = ["AWS_SSO"]
+
+# Grafana admin users (SSO user IDs)
+# Find user IDs in AWS IAM Identity Center
+grafana_admin_user_ids = []

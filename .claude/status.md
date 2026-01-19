@@ -1,7 +1,67 @@
 # Project Status: Kong LLM Gateway
 
 **Last Updated:** 2026-01-19
-**Current Phase:** Initial Setup - Claude Code Configuration
+**Current Phase:** POC Implementation - ECS Fargate + AMP + AMG
+
+---
+
+## POC Environment (In Progress)
+
+### Architecture
+
+```
+┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
+│   Clients   │     │       ECS Fargate (Kong)         │     │   AWS Bedrock   │
+│(claude-code)│────▶│  ┌────────────────────────────┐  │────▶│                 │
+│             │     │  │ Kong Gateway (DB-less)     │  │     │  - Claude Opus  │
+└─────────────┘     │  │ + Custom Plugins           │  │     │  - Claude Sonnet│
+                    │  └────────────────────────────┘  │     │  - Claude Haiku │
+                    └──────────────────────────────────┘     └─────────────────┘
+                                    │
+                                    ▼
+                           ┌──────────────┐
+                           │     AMP      │
+                           │  (Prometheus)│
+                           └──────┬───────┘
+                                  │
+                                  ▼
+                           ┌──────────────┐
+                           │     AMG      │
+                           │  (Grafana)   │
+                           └──────────────┘
+```
+
+**Note**: POC non include Datadog (sarà aggiunto in prod)
+
+### POC Components
+
+| Component | Service | Estimated Cost |
+|-----------|---------|----------------|
+| Kong Gateway | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8/month |
+| Metrics | Amazon Managed Prometheus (AMP) | ~$5-8/month |
+| Dashboards | Amazon Managed Grafana (AMG) | ~$9/month |
+| LLM | Bedrock Opus 4.5 | Pay per use |
+| **Total Fixed** | | **~$22-25/month** |
+
+### POC Terraform Modules
+
+| Module | Status | Path |
+|--------|--------|------|
+| ECS Fargate | ✅ Complete | `infra/terraform/modules/ecs/` |
+| AMP | ✅ Complete | `infra/terraform/modules/amp/` |
+| AMG | ✅ Complete | `infra/terraform/modules/amg/` |
+| POC Environment | ✅ Complete | `infra/terraform/environments/poc/` |
+
+### POC Deployment Commands
+
+```bash
+cd infra/terraform/environments/poc
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+terraform init
+terraform plan
+terraform apply
+```
 
 ---
 
