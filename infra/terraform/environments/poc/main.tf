@@ -2,11 +2,12 @@
 #
 # Low-cost POC deployment with:
 # - ECS Fargate (Kong Gateway)
-# - Amazon Managed Prometheus (AMP)
-# - Grafana OSS on ECS (instead of AMG - not available in us-west-1)
+# - Victoria Metrics (Prometheus-compatible)
+# - Grafana OSS on ECS
+# - NAT Instance (t3.nano) instead of NAT Gateway
 # - Bedrock access (Opus 4.5, Sonnet, Haiku)
 #
-# Estimated cost: ~$20/month fixed + Bedrock usage
+# Estimated cost: ~$54/month fixed + Bedrock usage
 
 terraform {
   required_version = ">= 1.5.0"
@@ -72,8 +73,8 @@ module "vpc" {
   private_subnets = var.private_subnet_cidrs
   public_subnets  = var.public_subnet_cidrs
 
-  enable_nat_gateway     = true
-  single_nat_gateway     = true  # Cost optimization for POC
+  enable_nat_gateway     = false  # Using NAT instance instead
+  single_nat_gateway     = false
   enable_dns_hostnames   = true
   enable_dns_support     = true
 
@@ -81,20 +82,93 @@ module "vpc" {
 }
 
 # -----------------------------------------------------------------------------
-# Amazon Managed Prometheus (AMP)
+# Amazon Managed Prometheus (AMP) - DISABLED for cost savings
+# -----------------------------------------------------------------------------
+# module "amp" {
+#   source = "../../modules/amp"
+#
+#   project_name = local.project_name
+#   environment  = local.environment
+#
+#   log_retention_days     = 7
+#   enable_alertmanager    = false
+#   enable_recording_rules = false
+#
+#   tags = local.tags
+# }
+
+# -----------------------------------------------------------------------------
+# NAT Instance (cost-effective alternative to NAT Gateway)
 # -----------------------------------------------------------------------------
 
-module "amp" {
-  source = "../../modules/amp"
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
 
-  project_name = local.project_name
-  environment  = local.environment
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023*-x86_64"]
+  }
 
-  log_retention_days     = 7
-  enable_alertmanager    = false  # No alerting in POC
-  enable_recording_rules = false  # Temporarily disabled due to API conflict
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
 
-  tags = local.tags
+resource "aws_security_group" "nat_instance" {
+  name        = "${local.project_name}-nat-instance-${local.environment}"
+  description = "Security group for NAT instance"
+  vpc_id      = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+
+  ingress {
+    description = "Allow all from VPC"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.tags, {
+    Name = "${local.project_name}-nat-instance-${local.environment}"
+  })
+}
+
+resource "aws_instance" "nat" {
+  ami                         = data.aws_ami.amazon_linux_2023.id
+  instance_type               = "t3.nano"
+  subnet_id                   = var.create_vpc ? module.vpc[0].public_subnets[0] : var.public_subnet_ids[0]
+  vpc_security_group_ids      = [aws_security_group.nat_instance.id]
+  associate_public_ip_address = true
+  source_dest_check           = false
+
+  user_data = <<-EOF
+    #!/bin/bash
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+    iptables -t nat -A POSTROUTING -o enX0 -j MASQUERADE
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  EOF
+
+  tags = merge(local.tags, {
+    Name = "${local.project_name}-nat-instance-${local.environment}"
+  })
+}
+
+resource "aws_route" "private_nat" {
+  count = var.create_vpc ? length(module.vpc[0].private_route_table_ids) : 0
+
+  route_table_id         = module.vpc[0].private_route_table_ids[count.index]
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat.primary_network_interface_id
 }
 
 # -----------------------------------------------------------------------------
@@ -132,8 +206,8 @@ module "ecs" {
   # Observability
   enable_container_insights = true
   log_retention_days        = 7
-  amp_workspace_id          = module.amp.workspace_id
-  enable_amp_write          = false  # Disabled - ADOT causing issues
+  amp_workspace_id          = ""     # AMP disabled
+  enable_amp_write          = false  # AMP disabled
 
   # Bedrock models
   allowed_model_arns = [
@@ -166,9 +240,9 @@ module "grafana" {
   grafana_image  = var.grafana_image
   use_spot       = true
 
-  # AMP integration
-  amp_workspace_arn         = module.amp.workspace_arn
-  amp_remote_write_endpoint = module.amp.remote_write_url
+  # AMP integration - disabled, using Victoria Metrics
+  amp_workspace_arn         = ""
+  amp_remote_write_endpoint = ""
 
   # Admin password from Secrets Manager
   grafana_admin_password_secret_arn = var.grafana_admin_password_secret_arn
