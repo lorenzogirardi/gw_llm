@@ -169,3 +169,23 @@ module "grafana" {
 
   tags = local.tags
 }
+
+# -----------------------------------------------------------------------------
+# CloudFront (HTTPS termination)
+# -----------------------------------------------------------------------------
+
+module "cloudfront" {
+  source = "../../modules/cloudfront"
+
+  project_name = local.project_name
+  environment  = local.environment
+
+  # Origin
+  alb_dns_name = module.ecs.alb_dns_name
+
+  # Settings
+  price_class = "PriceClass_100"  # US, Canada, Europe only
+  enable_waf  = false             # Disable WAF for POC (cost savings)
+
+  tags = local.tags
+}

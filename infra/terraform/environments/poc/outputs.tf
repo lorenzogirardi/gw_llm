@@ -1,32 +1,41 @@
 # POC Environment Outputs
 
 # -----------------------------------------------------------------------------
-# Kong Gateway
+# CloudFront (HTTPS endpoints)
 # -----------------------------------------------------------------------------
 
-output "kong_endpoint" {
-  description = "Kong API endpoint URL"
-  value       = module.ecs.kong_endpoint
+output "api_endpoint" {
+  description = "Kong API endpoint URL (HTTPS via CloudFront)"
+  value       = module.cloudfront.https_endpoint
 }
 
-output "kong_endpoint_https" {
-  description = "Kong API endpoint URL (HTTPS)"
-  value       = module.ecs.kong_endpoint_https
+output "grafana_url" {
+  description = "Grafana dashboard URL (HTTPS via CloudFront)"
+  value       = module.cloudfront.grafana_url
 }
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID"
+  value       = module.cloudfront.distribution_id
+}
+
+output "cloudfront_domain" {
+  description = "CloudFront domain name"
+  value       = module.cloudfront.domain_name
+}
+
+# -----------------------------------------------------------------------------
+# ALB (internal, HTTP only)
+# -----------------------------------------------------------------------------
 
 output "kong_alb_dns" {
-  description = "Kong ALB DNS name"
+  description = "Kong ALB DNS name (internal)"
   value       = module.ecs.alb_dns_name
 }
 
 # -----------------------------------------------------------------------------
 # Observability
 # -----------------------------------------------------------------------------
-
-output "grafana_url" {
-  description = "Grafana dashboard URL"
-  value       = "${module.ecs.kong_endpoint}/grafana"
-}
 
 output "prometheus_endpoint" {
   description = "AMP Prometheus endpoint"
@@ -93,20 +102,20 @@ output "quick_start" {
   description = "Quick start commands"
   value       = <<-EOT
 
-    # Test Kong health
-    curl ${module.ecs.kong_endpoint}/health
+    # Test Kong health (HTTPS)
+    curl ${module.cloudfront.https_endpoint}/health
 
     # Test chat endpoint (requires API key configuration)
-    curl -X POST ${module.ecs.kong_endpoint}/v1/chat/developer \
+    curl -X POST ${module.cloudfront.https_endpoint}/v1/chat/completions \
       -H "Content-Type: application/json" \
-      -H "apikey: your-api-key" \
+      -H "apikey: dev-api-key-changeme" \
       -d '{"model":"claude-haiku","messages":[{"role":"user","content":"Hello"}]}'
 
     # View logs
     aws logs tail ${module.ecs.log_group_name} --follow
 
     # Open Grafana (default: admin/admin)
-    open ${module.ecs.kong_endpoint}/grafana
+    open ${module.cloudfront.grafana_url}
 
   EOT
 }
