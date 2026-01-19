@@ -1,0 +1,10 @@
+# Kong Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: api-gateway
+    app.kubernetes.io/part-of: llm-gateway
+    istio-injection: disabled  # Disable if not using Istio

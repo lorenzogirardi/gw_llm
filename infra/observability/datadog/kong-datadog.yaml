@@ -1,0 +1,306 @@
+# Datadog Configuration for Kong LLM Gateway
+#
+# This configuration enables:
+# - Kong metrics collection via DogStatsD
+# - APM tracing integration
+# - Log collection and parsing
+# - Custom LLM metrics
+#
+# Prerequisites:
+# - Datadog Agent installed in the cluster
+# - DD_API_KEY configured as Kubernetes secret
+
+# Datadog Agent configuration (add to datadog-values.yaml or ConfigMap)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadog-kong-config
+  namespace: datadog
+  labels:
+    app.kubernetes.io/name: datadog
+    app.kubernetes.io/component: kong-integration
+data:
+  kong.yaml: |
+    # Datadog Kong Integration
+    # Reference: https://docs.datadoghq.com/integrations/kong/
+
+    init_config:
+
+    instances:
+      # Kong status endpoint for metrics
+      - kong_status_url: http://kong-kong-status.kong.svc:8100/status
+        # Enable Prometheus endpoint scraping
+        openmetrics_endpoint: http://kong-kong-status.kong.svc:8100/metrics
+
+        # Custom tags for filtering
+        tags:
+          - env:${DD_ENV}
+          - service:kong-llm-gateway
+          - team:platform
+
+        # Collect all available metrics
+        collect_default_metrics: true
+
+        # Custom metrics for LLM tracking
+        extra_metrics:
+          - kong_llm_tokens_total
+          - kong_llm_input_tokens_total
+          - kong_llm_output_tokens_total
+          - kong_llm_cost_total
+          - kong_guardrail_blocks_total
+
+---
+# Kong Pod annotations for Datadog autodiscovery
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-datadog-annotations
+  namespace: kong
+data:
+  annotations.yaml: |
+    # Add these annotations to Kong deployment
+    annotations:
+      # Enable autodiscovery for Kong integration
+      ad.datadoghq.com/kong.check_names: '["kong"]'
+      ad.datadoghq.com/kong.init_configs: '[{}]'
+      ad.datadoghq.com/kong.instances: |
+        [
+          {
+            "kong_status_url": "http://%%host%%:8100/status",
+            "openmetrics_endpoint": "http://%%host%%:8100/metrics"
+          }
+        ]
+
+      # Enable APM tracing
+      ad.datadoghq.com/kong.logs: |
+        [
+          {
+            "source": "kong",
+            "service": "kong-llm-gateway",
+            "log_processing_rules": [
+              {
+                "type": "multi_line",
+                "name": "kong_access_log",
+                "pattern": "^\\d{4}/\\d{2}/\\d{2}"
+              }
+            ]
+          }
+        ]
+
+---
+# Datadog Dashboard Configuration (export as JSON)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadog-kong-dashboard
+  namespace: datadog
+data:
+  dashboard.json: |
+    {
+      "title": "Kong LLM Gateway",
+      "description": "Monitoring dashboard for Kong API Gateway with Bedrock integration",
+      "widgets": [
+        {
+          "definition": {
+            "title": "Request Rate",
+            "type": "timeseries",
+            "requests": [
+              {
+                "q": "sum:kong.http.requests.total{$env,$service}.as_rate()",
+                "display_type": "line"
+              }
+            ]
+          }
+        },
+        {
+          "definition": {
+            "title": "Error Rate",
+            "type": "timeseries",
+            "requests": [
+              {
+                "q": "sum:kong.http.requests.total{$env,$service,code:5*}.as_rate() / sum:kong.http.requests.total{$env,$service}.as_rate() * 100",
+                "display_type": "line"
+              }
+            ]
+          }
+        },
+        {
+          "definition": {
+            "title": "Token Usage by Model",
+            "type": "timeseries",
+            "requests": [
+              {
+                "q": "sum:kong.llm.tokens.total{$env,$service} by {model}.as_count()",
+                "display_type": "bars"
+              }
+            ]
+          }
+        },
+        {
+          "definition": {
+            "title": "Estimated Cost",
+            "type": "query_value",
+            "requests": [
+              {
+                "q": "sum:kong.llm.cost.total{$env,$service}",
+                "aggregator": "last"
+              }
+            ],
+            "precision": 2,
+            "autoscale": true,
+            "custom_unit": "$"
+          }
+        },
+        {
+          "definition": {
+            "title": "P95 Latency",
+            "type": "timeseries",
+            "requests": [
+              {
+                "q": "p95:kong.request.latency.ms{$env,$service}",
+                "display_type": "line"
+              }
+            ]
+          }
+        },
+        {
+          "definition": {
+            "title": "Guardrail Blocks",
+            "type": "timeseries",
+            "requests": [
+              {
+                "q": "sum:kong.guardrail.blocks.total{$env,$service} by {rule}.as_count()",
+                "display_type": "bars"
+              }
+            ]
+          }
+        }
+      ],
+      "template_variables": [
+        {
+          "name": "env",
+          "default": "*",
+          "prefix": "env"
+        },
+        {
+          "name": "service",
+          "default": "kong-llm-gateway",
+          "prefix": "service"
+        }
+      ],
+      "layout_type": "ordered"
+    }
+
+---
+# Datadog Monitors (Alerts)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadog-kong-monitors
+  namespace: datadog
+data:
+  monitors.yaml: |
+    # High Error Rate Alert
+    - name: "[Kong LLM] High Error Rate"
+      type: metric alert
+      query: "sum(last_5m):sum:kong.http.requests.total{service:kong-llm-gateway,code:5*}.as_rate() / sum:kong.http.requests.total{service:kong-llm-gateway}.as_rate() * 100 > 5"
+      message: |
+        Kong LLM Gateway is experiencing high error rate: {{value}}%
+
+        Service: {{service.name}}
+        Environment: {{env}}
+
+        @slack-kong-alerts
+      tags:
+        - service:kong-llm-gateway
+        - env:{{env}}
+      priority: 2
+      thresholds:
+        critical: 10
+        warning: 5
+
+    # High Latency Alert
+    - name: "[Kong LLM] High P95 Latency"
+      type: metric alert
+      query: "avg(last_5m):p95:kong.request.latency.ms{service:kong-llm-gateway} > 5000"
+      message: |
+        Kong LLM Gateway P95 latency is high: {{value}}ms
+
+        @slack-kong-alerts
+      tags:
+        - service:kong-llm-gateway
+      priority: 3
+      thresholds:
+        critical: 10000
+        warning: 5000
+
+    # Token Quota Alert
+    - name: "[Kong LLM] High Token Usage"
+      type: metric alert
+      query: "sum(last_1h):sum:kong.llm.tokens.total{service:kong-llm-gateway} by {consumer} > 100000"
+      message: |
+        Consumer {{consumer.name}} has high token usage: {{value}} tokens/hour
+
+        Consider reviewing rate limits or usage patterns.
+
+        @slack-kong-alerts
+      tags:
+        - service:kong-llm-gateway
+      priority: 3
+      thresholds:
+        critical: 500000
+        warning: 100000
+
+    # Cost Threshold Alert
+    - name: "[Kong LLM] Daily Cost Threshold"
+      type: metric alert
+      query: "sum(last_1d):sum:kong.llm.cost.total{service:kong-llm-gateway} > 100"
+      message: |
+        Daily LLM cost threshold exceeded: ${{value}}
+
+        Review consumer usage patterns and consider adjustments.
+
+        @slack-kong-alerts @pagerduty-platform
+      tags:
+        - service:kong-llm-gateway
+      priority: 2
+      thresholds:
+        critical: 500
+        warning: 100
+
+    # Bedrock Connection Alert
+    - name: "[Kong LLM] Bedrock Connection Issues"
+      type: metric alert
+      query: "sum(last_5m):sum:kong.upstream.target.health{upstream:*bedrock*,state:unhealthy}.as_count() > 0"
+      message: |
+        Kong cannot reach Bedrock API endpoints.
+
+        Check AWS Bedrock service status and IAM permissions.
+
+        @slack-kong-alerts @pagerduty-platform
+      tags:
+        - service:kong-llm-gateway
+      priority: 1
+      thresholds:
+        critical: 1
+
+    # Guardrail Blocks Alert
+    - name: "[Kong LLM] Guardrail Blocks Spike"
+      type: metric alert
+      query: "sum(last_15m):sum:kong.guardrail.blocks.total{service:kong-llm-gateway} by {rule}.as_count() > 50"
+      message: |
+        High number of guardrail blocks for rule: {{rule.name}}
+
+        Blocked count: {{value}}
+
+        Review request patterns for potential issues.
+
+        @slack-security-alerts
+      tags:
+        - service:kong-llm-gateway
+        - security:guardrail
+      priority: 3
+      thresholds:
+        critical: 100
+        warning: 50

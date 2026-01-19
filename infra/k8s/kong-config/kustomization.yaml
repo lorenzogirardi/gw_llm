@@ -1,0 +1,46 @@
+# Kustomization for Kong ConfigMaps
+#
+# Generates ConfigMaps from local files for declarative Kong config
+# and custom plugins
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kong
+
+resources:
+  - namespace.yaml
+
+configMapGenerator:
+  # Kong declarative configuration
+  - name: kong-declarative-config
+    files:
+      - kong.yaml=../../../kong/kong.yaml
+
+  # Bedrock Proxy Plugin
+  - name: kong-plugin-bedrock-proxy
+    files:
+      - handler.lua=../../../kong/plugins/bedrock-proxy/handler.lua
+      - schema.lua=../../../kong/plugins/bedrock-proxy/schema.lua
+
+  # Token Meter Plugin
+  - name: kong-plugin-token-meter
+    files:
+      - handler.lua=../../../kong/plugins/token-meter/handler.lua
+      - schema.lua=../../../kong/plugins/token-meter/schema.lua
+
+  # Ecommerce Guardrails Plugin
+  - name: kong-plugin-ecommerce-guardrails
+    files:
+      - handler.lua=../../../kong/plugins/ecommerce-guardrails/handler.lua
+      - schema.lua=../../../kong/plugins/ecommerce-guardrails/schema.lua
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: config
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: llm-gateway

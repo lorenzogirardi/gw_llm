@@ -1,0 +1,113 @@
+# Kong Gateway Helm Values - Production Environment
+#
+# Inherits from values-base.yaml
+# Usage: helm upgrade --install kong kong/kong -f values-base.yaml -f values-prod.yaml
+
+# Admin API disabled in production
+admin:
+  enabled: false
+
+# Production logging
+env:
+  log_level: "warn"
+
+# Proxy service - internet-facing NLB with cross-zone
+proxy:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+
+# Service account with IRSA
+serviceAccount:
+  create: true
+  name: kong
+  annotations: {}
+  # IRSA annotation will be added during deployment:
+  # eks.amazonaws.com/role-arn: <kong_role_arn>
+
+# Production resources
+resources:
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+
+# HA configuration
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# PDB for production availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: "50%"
+
+# Production tolerations
+tolerations: []
+
+# Priority class for critical workload
+priorityClassName: system-cluster-critical
+
+# Update strategy
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+
+# Network policy for production security
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8443
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+# Extra environment variables for production
+extraEnvVars:
+  - name: KONG_NGINX_WORKER_PROCESSES
+    value: "auto"
+  - name: KONG_MEM_CACHE_SIZE
+    value: "256m"

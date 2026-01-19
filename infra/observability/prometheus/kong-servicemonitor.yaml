@@ -1,0 +1,168 @@
+# Kong ServiceMonitor for Prometheus
+#
+# Scrapes Kong metrics endpoint for Prometheus monitoring
+# Requires Prometheus Operator to be installed
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kong-gateway
+  namespace: kong
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: metrics
+    release: prometheus  # Match Prometheus operator selector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kong
+  namespaceSelector:
+    matchNames:
+      - kong
+  endpoints:
+    - port: status
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: service
+      metricRelabelings:
+        # Add custom labels for LLM gateway metrics
+        - sourceLabels: [__name__]
+          regex: 'kong_.*'
+          action: keep
+        # Add environment label
+        - targetLabel: environment
+          replacement: "${ENVIRONMENT}"
+
+---
+# PrometheusRule for Kong alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kong-alerts
+  namespace: kong
+  labels:
+    app.kubernetes.io/name: kong
+    release: prometheus
+spec:
+  groups:
+    - name: kong.rules
+      interval: 30s
+      rules:
+        # High error rate
+        - alert: KongHighErrorRate
+          expr: |
+            sum(rate(kong_http_requests_total{code=~"5.."}[5m])) by (service)
+            /
+            sum(rate(kong_http_requests_total[5m])) by (service)
+            > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High error rate on Kong service {{ $labels.service }}"
+            description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.service }}"
+
+        # Very high error rate (critical)
+        - alert: KongCriticalErrorRate
+          expr: |
+            sum(rate(kong_http_requests_total{code=~"5.."}[5m])) by (service)
+            /
+            sum(rate(kong_http_requests_total[5m])) by (service)
+            > 0.10
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Critical error rate on Kong service {{ $labels.service }}"
+            description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.service }}"
+
+        # High latency (P99)
+        - alert: KongHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(kong_request_latency_ms_bucket[5m])) by (le, service)
+            ) > 5000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High latency on Kong service {{ $labels.service }}"
+            description: "P99 latency is {{ $value }}ms on {{ $labels.service }}"
+
+        # Kong pods down
+        - alert: KongPodsDown
+          expr: |
+            kube_deployment_status_replicas_available{deployment=~".*kong.*"}
+            /
+            kube_deployment_spec_replicas{deployment=~".*kong.*"}
+            < 0.5
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kong deployment has insufficient replicas"
+            description: "Only {{ $value | humanizePercentage }} of Kong pods are available"
+
+        # High token usage rate
+        - alert: KongHighTokenUsage
+          expr: |
+            sum(rate(kong_llm_tokens_total[5m])) by (consumer, model) > 1000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High token usage for consumer {{ $labels.consumer }}"
+            description: "Token rate is {{ $value }}/s for model {{ $labels.model }}"
+
+        # Rate limiting triggered
+        - alert: KongRateLimitTriggered
+          expr: |
+            sum(rate(kong_http_requests_total{code="429"}[5m])) by (consumer) > 10
+          for: 5m
+          labels:
+            severity: info
+          annotations:
+            summary: "Rate limiting triggered for consumer {{ $labels.consumer }}"
+            description: "Rate limit hits: {{ $value }}/s"
+
+        # Bedrock API errors
+        - alert: KongBedrockErrors
+          expr: |
+            sum(rate(kong_upstream_target_health{upstream=~".*bedrock.*", state="unhealthy"}[5m])) > 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Bedrock upstream is unhealthy"
+            description: "Kong cannot reach Bedrock API"
+
+    - name: kong.llm.rules
+      interval: 30s
+      rules:
+        # Token quota exceeded
+        - alert: TokenQuotaExceeded
+          expr: |
+            kong_llm_tokens_total > 1000000
+          labels:
+            severity: warning
+          annotations:
+            summary: "Token quota exceeded for {{ $labels.consumer }}"
+            description: "Consumer {{ $labels.consumer }} has used {{ $value }} tokens"
+
+        # Cost threshold alert
+        - alert: HighLLMCost
+          expr: |
+            sum(kong_llm_cost_total) by (consumer) > 100
+          labels:
+            severity: warning
+          annotations:
+            summary: "High LLM cost for consumer {{ $labels.consumer }}"
+            description: "Estimated cost: ${{ $value }}"
