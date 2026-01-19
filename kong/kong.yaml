@@ -1,0 +1,501 @@
+# Kong LLM Gateway - Declarative Configuration
+# This file can be used for DB-less mode or imported via deck
+#
+# Usage:
+#   deck sync -s kong.yaml          # Sync to Kong with DB
+#   deck validate -s kong.yaml      # Validate configuration
+#
+# Environment variables (set in docker-compose or k8s):
+#   BEDROCK_ENDPOINT: Bedrock API endpoint (or mock)
+#   AWS_REGION: AWS region for Bedrock
+
+_format_version: "3.0"
+_transform: true
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # Bedrock Claude 3.5 Sonnet (Developer)
+  # ---------------------------------------------------------------------------
+  - name: bedrock-claude-opus
+    url: ${BEDROCK_ENDPOINT:-http://mock-bedrock:8080}
+    protocol: http
+    connect_timeout: 60000
+    write_timeout: 120000
+    read_timeout: 120000
+    retries: 3
+    tags:
+      - bedrock
+      - claude
+      - opus
+
+  # ---------------------------------------------------------------------------
+  # Bedrock Claude 3 Sonnet (Analyst, Ecommerce Ops)
+  # ---------------------------------------------------------------------------
+  - name: bedrock-claude-sonnet
+    url: ${BEDROCK_ENDPOINT:-http://mock-bedrock:8080}
+    protocol: http
+    connect_timeout: 60000
+    write_timeout: 120000
+    read_timeout: 120000
+    retries: 3
+    tags:
+      - bedrock
+      - claude
+      - sonnet
+
+  # ---------------------------------------------------------------------------
+  # Bedrock Claude 3 Haiku (Guest)
+  # ---------------------------------------------------------------------------
+  - name: bedrock-claude-haiku
+    url: ${BEDROCK_ENDPOINT:-http://mock-bedrock:8080}
+    protocol: http
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+    retries: 2
+    tags:
+      - bedrock
+      - claude
+      - haiku
+
+# =============================================================================
+# ROUTES
+# =============================================================================
+routes:
+  # ---------------------------------------------------------------------------
+  # Developer Route (Claude Opus)
+  # ---------------------------------------------------------------------------
+  - name: route-developer-chat
+    service: bedrock-claude-opus
+    paths:
+      - /v1/chat/developer
+      - /v1/completions/developer
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - developer
+      - chat
+
+  # ---------------------------------------------------------------------------
+  # Analyst Route (Claude Sonnet)
+  # ---------------------------------------------------------------------------
+  - name: route-analyst-chat
+    service: bedrock-claude-sonnet
+    paths:
+      - /v1/chat/analyst
+      - /v1/completions/analyst
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - analyst
+      - chat
+
+  # ---------------------------------------------------------------------------
+  # Ecommerce Ops Route (Claude Sonnet - limited)
+  # ---------------------------------------------------------------------------
+  - name: route-ecommerce-ops-chat
+    service: bedrock-claude-sonnet
+    paths:
+      - /v1/chat/ops
+      - /v1/completions/ops
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - ecommerce_ops
+      - chat
+
+  # ---------------------------------------------------------------------------
+  # Guest Route (Claude Haiku)
+  # ---------------------------------------------------------------------------
+  - name: route-guest-chat
+    service: bedrock-claude-haiku
+    paths:
+      - /v1/chat/guest
+      - /v1/completions/guest
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - guest
+      - chat
+
+  # ---------------------------------------------------------------------------
+  # Universal Route (model selected by header/body)
+  # ---------------------------------------------------------------------------
+  - name: route-universal-chat
+    service: bedrock-claude-sonnet
+    paths:
+      - /v1/chat
+      - /v1/completions
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - universal
+      - chat
+
+  # ---------------------------------------------------------------------------
+  # Health Check
+  # ---------------------------------------------------------------------------
+  - name: route-health
+    service: bedrock-claude-haiku
+    paths:
+      - /health
+    methods:
+      - GET
+    strip_path: true
+    tags:
+      - health
+
+# =============================================================================
+# CONSUMERS
+# =============================================================================
+consumers:
+  # Admin (full access)
+  - username: admin-user
+    custom_id: admin-001
+    tags:
+      - admin
+
+  # Developers
+  - username: dev-user-1
+    custom_id: dev-001
+    tags:
+      - developer
+  - username: dev-user-2
+    custom_id: dev-002
+    tags:
+      - developer
+
+  # Analysts
+  - username: analyst-user-1
+    custom_id: analyst-001
+    tags:
+      - analyst
+
+  # Ecommerce Operations
+  - username: ops-user-1
+    custom_id: ops-001
+    tags:
+      - ecommerce_ops
+
+  # Guests
+  - username: guest-user-1
+    custom_id: guest-001
+    tags:
+      - guest
+
+# =============================================================================
+# CONSUMER GROUPS (for RBAC)
+# =============================================================================
+consumer_groups:
+  - name: admin
+    tags:
+      - rbac
+  - name: developer
+    tags:
+      - rbac
+  - name: analyst
+    tags:
+      - rbac
+  - name: ecommerce_ops
+    tags:
+      - rbac
+  - name: guest
+    tags:
+      - rbac
+
+# =============================================================================
+# PLUGINS - GLOBAL
+# =============================================================================
+plugins:
+  # ---------------------------------------------------------------------------
+  # Prometheus Metrics (Global)
+  # ---------------------------------------------------------------------------
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+    tags:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Correlation ID (Global)
+  # ---------------------------------------------------------------------------
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid#counter
+      echo_downstream: true
+    tags:
+      - tracing
+
+  # ---------------------------------------------------------------------------
+  # Request Termination for blocked paths
+  # ---------------------------------------------------------------------------
+  - name: request-termination
+    route: route-health
+    config:
+      status_code: 200
+      message: '{"status":"healthy","service":"kong-llm-gateway"}'
+      content_type: application/json
+    tags:
+      - health
+
+# =============================================================================
+# PLUGINS - AUTHENTICATION (per route)
+# =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # Key Auth for Developer Route
+  # ---------------------------------------------------------------------------
+  - name: key-auth
+    route: route-developer-chat
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      key_in_query: false
+      key_in_header: true
+      key_in_body: false
+      hide_credentials: true
+    tags:
+      - auth
+      - developer
+
+  # ---------------------------------------------------------------------------
+  # Key Auth for Analyst Route
+  # ---------------------------------------------------------------------------
+  - name: key-auth
+    route: route-analyst-chat
+    config:
+      key_names:
+        - X-API-Key
+      hide_credentials: true
+    tags:
+      - auth
+      - analyst
+
+  # ---------------------------------------------------------------------------
+  # Key Auth for Ecommerce Ops Route
+  # ---------------------------------------------------------------------------
+  - name: key-auth
+    route: route-ecommerce-ops-chat
+    config:
+      key_names:
+        - X-API-Key
+      hide_credentials: true
+    tags:
+      - auth
+      - ecommerce_ops
+
+  # ---------------------------------------------------------------------------
+  # Key Auth for Guest Route
+  # ---------------------------------------------------------------------------
+  - name: key-auth
+    route: route-guest-chat
+    config:
+      key_names:
+        - X-API-Key
+      hide_credentials: true
+    tags:
+      - auth
+      - guest
+
+  # ---------------------------------------------------------------------------
+  # Key Auth for Universal Route
+  # ---------------------------------------------------------------------------
+  - name: key-auth
+    route: route-universal-chat
+    config:
+      key_names:
+        - X-API-Key
+        - Authorization
+      hide_credentials: true
+    tags:
+      - auth
+      - universal
+
+# =============================================================================
+# PLUGINS - RATE LIMITING (per route, token-based)
+# =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # Rate Limit: Developer (10k tokens/min simulated as 100 req/min)
+  # ---------------------------------------------------------------------------
+  - name: rate-limiting
+    route: route-developer-chat
+    config:
+      minute: 100
+      policy: redis
+      redis_host: redis
+      redis_port: 6379
+      redis_timeout: 2000
+      fault_tolerant: true
+      hide_client_headers: false
+      header_name: X-RateLimit-Developer
+    tags:
+      - rate-limit
+      - developer
+
+  # ---------------------------------------------------------------------------
+  # Rate Limit: Analyst (5k tokens/min ~ 50 req/min)
+  # ---------------------------------------------------------------------------
+  - name: rate-limiting
+    route: route-analyst-chat
+    config:
+      minute: 50
+      policy: redis
+      redis_host: redis
+      redis_port: 6379
+      fault_tolerant: true
+    tags:
+      - rate-limit
+      - analyst
+
+  # ---------------------------------------------------------------------------
+  # Rate Limit: Ecommerce Ops (2k tokens/min ~ 20 req/min)
+  # ---------------------------------------------------------------------------
+  - name: rate-limiting
+    route: route-ecommerce-ops-chat
+    config:
+      minute: 20
+      policy: redis
+      redis_host: redis
+      redis_port: 6379
+      fault_tolerant: true
+    tags:
+      - rate-limit
+      - ecommerce_ops
+
+  # ---------------------------------------------------------------------------
+  # Rate Limit: Guest (500 tokens/min ~ 10 req/min)
+  # ---------------------------------------------------------------------------
+  - name: rate-limiting
+    route: route-guest-chat
+    config:
+      minute: 10
+      policy: redis
+      redis_host: redis
+      redis_port: 6379
+      fault_tolerant: true
+    tags:
+      - rate-limit
+      - guest
+
+  # ---------------------------------------------------------------------------
+  # Rate Limit: Universal (default 30 req/min)
+  # ---------------------------------------------------------------------------
+  - name: rate-limiting
+    route: route-universal-chat
+    config:
+      minute: 30
+      policy: redis
+      redis_host: redis
+      redis_port: 6379
+      fault_tolerant: true
+    tags:
+      - rate-limit
+      - universal
+
+# =============================================================================
+# PLUGINS - REQUEST/RESPONSE TRANSFORMATION
+# =============================================================================
+
+  # ---------------------------------------------------------------------------
+  # Add Bedrock headers (model ID based on route)
+  # ---------------------------------------------------------------------------
+  - name: request-transformer
+    route: route-developer-chat
+    config:
+      add:
+        headers:
+          - "X-Bedrock-Model:anthropic.claude-3-5-sonnet-20240620-v1:0"
+          - "X-Consumer-Role:developer"
+    tags:
+      - transform
+      - developer
+
+  - name: request-transformer
+    route: route-analyst-chat
+    config:
+      add:
+        headers:
+          - "X-Bedrock-Model:anthropic.claude-3-sonnet-20240229-v1:0"
+          - "X-Consumer-Role:analyst"
+    tags:
+      - transform
+      - analyst
+
+  - name: request-transformer
+    route: route-ecommerce-ops-chat
+    config:
+      add:
+        headers:
+          - "X-Bedrock-Model:anthropic.claude-3-sonnet-20240229-v1:0"
+          - "X-Consumer-Role:ecommerce_ops"
+    tags:
+      - transform
+      - ecommerce_ops
+
+  - name: request-transformer
+    route: route-guest-chat
+    config:
+      add:
+        headers:
+          - "X-Bedrock-Model:anthropic.claude-3-haiku-20240307-v1:0"
+          - "X-Consumer-Role:guest"
+    tags:
+      - transform
+      - guest
+
+# =============================================================================
+# KEY CREDENTIALS (for local testing)
+# =============================================================================
+keyauth_credentials:
+  # Admin
+  - consumer: admin-user
+    key: admin-key-super-secret
+    tags:
+      - admin
+
+  # Developers
+  - consumer: dev-user-1
+    key: dev-key-123
+    tags:
+      - developer
+  - consumer: dev-user-2
+    key: dev-key-456
+    tags:
+      - developer
+
+  # Analysts
+  - consumer: analyst-user-1
+    key: analyst-key-789
+    tags:
+      - analyst
+
+  # Ecommerce Ops
+  - consumer: ops-user-1
+    key: ops-key-abc
+    tags:
+      - ecommerce_ops
+
+  # Guests
+  - consumer: guest-user-1
+    key: guest-key-xyz
+    tags:
+      - guest
