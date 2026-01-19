@@ -1,0 +1,53 @@
+# Prometheus Configuration for Kong LLM Gateway
+# Local development environment
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+    project: kong-llm-gateway
+
+# Alerting (optional - configure AlertManager separately)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+
+# Rule files
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: prometheus
+
+  # Kong metrics (requires prometheus plugin enabled)
+  - job_name: 'kong'
+    static_configs:
+      - targets: ['kong:8001']
+        labels:
+          service: kong
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Mock Bedrock health
+  - job_name: 'mock-bedrock'
+    static_configs:
+      - targets: ['mock-bedrock:8080']
+        labels:
+          service: mock-bedrock
+    metrics_path: /health
+    scrape_interval: 30s
+
+  # Redis metrics (requires redis_exporter)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+  #       labels:
+  #         service: redis

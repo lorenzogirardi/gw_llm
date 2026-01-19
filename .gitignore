@@ -1,1 +1,61 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+.terraform.lock.hcl
+crash.log
+
+# Docker
+docker-compose.override.yml
+
+# Secrets (NEVER commit these)
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+**/secrets/
+
+# AWS
+.aws/
+
+# Logs
+*.log
+logs/
+
+# Node.js (mock-bedrock)
+node_modules/
+npm-debug.log
+
+# Lua
+*.luac
+
+# Kong
+kong_prefix/
+servroot/
+
+# Test artifacts
+coverage/
+.nyc_output/
+*.test.log
+
+# Grafana
+grafana_data/
+
+# Build artifacts
+dist/
+build/
+*.tar.gz

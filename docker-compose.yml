@@ -1,0 +1,206 @@
+# Kong LLM Gateway - Local Development Environment
+# Usage: docker-compose up -d
+#
+# Services:
+# - kong: API Gateway (port 8000/8443)
+# - postgres: Kong database
+# - mock-bedrock: Mock server for Bedrock API testing
+# - prometheus: Metrics collection
+# - grafana: Metrics visualization (port 3000)
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # Kong API Gateway
+  # =============================================================================
+  kong:
+    image: kong:3.6-alpine
+    container_name: kong-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_PG_DATABASE: kong
+
+      # Proxy settings
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+
+      # Custom plugins
+      KONG_PLUGINS: bundled,bedrock-proxy,token-meter,ecommerce-guardrails
+      KONG_LUA_PACKAGE_PATH: /usr/local/share/lua/5.1/?.lua;;
+
+      # AWS credentials (from host)
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+
+      # Mock Bedrock endpoint (for local testing)
+      BEDROCK_ENDPOINT: ${BEDROCK_ENDPOINT:-http://mock-bedrock:8080}
+
+    volumes:
+      # Custom plugins
+      - ./kong/plugins/bedrock-proxy:/usr/local/share/lua/5.1/kong/plugins/bedrock-proxy:ro
+      - ./kong/plugins/token-meter:/usr/local/share/lua/5.1/kong/plugins/token-meter:ro
+      - ./kong/plugins/ecommerce-guardrails:/usr/local/share/lua/5.1/kong/plugins/ecommerce-guardrails:ro
+      # AWS credentials (optional, for real Bedrock access)
+      - ${HOME}/.aws:/home/kong/.aws:ro
+    ports:
+      - "8000:8000"   # Proxy HTTP
+      - "8443:8443"   # Proxy HTTPS
+      - "8001:8001"   # Admin API
+      - "8002:8002"   # Admin GUI
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # Kong Database Migrations
+  # =============================================================================
+  kong-migrations:
+    image: kong:3.6-alpine
+    container_name: kong-migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_PG_DATABASE: kong
+    command: kong migrations bootstrap
+    restart: on-failure
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: kong-postgres
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong
+      POSTGRES_DB: kong
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # Mock Bedrock Server (for local testing without AWS)
+  # =============================================================================
+  mock-bedrock:
+    image: node:20-alpine
+    container_name: mock-bedrock
+    working_dir: /app
+    volumes:
+      - ./mock-bedrock:/app:ro
+    command: node server.js
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # Redis (for rate limiting)
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: kong-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # Prometheus (Metrics)
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: kong-prometheus
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+  # =============================================================================
+  # Grafana (Visualization)
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: kong-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - kong-net
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  kong-net:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
