@@ -195,22 +195,36 @@ consumer_groups:
 
 ---
 
-## Next Steps
+## Next Steps (Pending)
 
-1. Create project structure (`kong/`, `infra/`, `docs/`)
-2. Implement `bedrock-proxy` plugin
-3. Configure role-based routing
-4. Set up local Docker Compose environment
-5. Write Terraform for EKS/IRSA
-6. Create Helm values for production
-7. Build observability stack
-8. Write runbooks and documentation
+### CI/CD & Testing
+- [ ] GitHub Actions CI workflow (lint, test, security scan)
+- [ ] GitHub Actions deploy workflow (EKS via ArgoCD)
+- [ ] Plugin test suite (Pongo/Busted)
+  - [ ] `kong/plugins/bedrock-proxy/spec/handler_spec.lua`
+  - [ ] `kong/plugins/token-meter/spec/handler_spec.lua`
+  - [ ] `kong/plugins/ecommerce-guardrails/spec/handler_spec.lua`
+
+### AWS Deployment
+- [ ] Deploy to EKS (pending AWS account readiness)
+- [ ] Configure IRSA for Bedrock access
+- [ ] Validate NLB and DNS setup
+
+### Post-Deploy Tests (AWS)
+- [ ] Smoke tests (health check, basic request)
+- [ ] Integration tests (all endpoints, all roles)
+- [ ] Load tests (rate limiting validation)
+- [ ] Security tests (guardrails validation)
+
+### Cleanup
+- [ ] Consolidate `observability/` directories
+- [ ] Add LICENSE file (MIT)
 
 ---
 
 ## Blockers
 
-- None currently
+- AWS account not ready for deployment
 
 ---
 
