@@ -109,6 +109,7 @@ module "ecs" {
 
   # Network
   vpc_id             = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  vpc_cidr           = var.vpc_cidr
   private_subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
   public_subnet_ids  = var.create_vpc ? module.vpc[0].public_subnets : var.public_subnet_ids
   allowed_cidr_blocks = var.allowed_cidr_blocks
@@ -118,7 +119,7 @@ module "ecs" {
   task_cpu       = 256   # 0.25 vCPU
   task_memory    = 512   # 512 MB
   desired_count  = 1
-  use_spot       = true  # Cost optimization
+  use_spot       = false  # Use regular Fargate for stability
 
   # Scaling disabled for POC
   enable_autoscaling = false
@@ -171,6 +172,33 @@ module "grafana" {
 
   # Admin password from Secrets Manager
   grafana_admin_password_secret_arn = var.grafana_admin_password_secret_arn
+
+  tags = local.tags
+}
+
+# -----------------------------------------------------------------------------
+# Victoria Metrics (Prometheus-compatible metrics storage)
+# -----------------------------------------------------------------------------
+
+module "victoria_metrics" {
+  source = "../../modules/victoria-metrics"
+
+  project_name = local.project_name
+  environment  = local.environment
+
+  # Network
+  vpc_id             = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  private_subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
+
+  # ECS
+  ecs_cluster_id        = module.ecs.cluster_id
+  alb_security_group_id = module.ecs.alb_security_group_id
+  alb_listener_arn      = module.ecs.alb_listener_http_arn
+  alb_arn               = module.ecs.alb_arn
+
+  # Kong metrics endpoint
+  kong_metrics_url  = "http://${module.ecs.alb_dns_name}:8100"
+  kong_metrics_host = module.ecs.alb_dns_name
 
   tags = local.tags
 }

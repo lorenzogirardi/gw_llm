@@ -193,7 +193,7 @@ locals {
     }
 
     healthCheck = {
-      command     = ["CMD-SHELL", "curl -f http://localhost:8100/status || exit 1"]
+      command     = ["CMD-SHELL", "kong health || exit 1"]
       interval    = 30
       timeout     = 5
       retries     = 3
@@ -315,6 +315,24 @@ resource "aws_security_group" "alb" {
     description = "HTTP from allowed CIDRs (redirect to HTTPS)"
   }
 
+  # Metrics port (for Grafana - open for POC)
+  ingress {
+    from_port   = 8100
+    to_port     = 8100
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Kong metrics (POC - open)"
+  }
+
+  # Victoria Metrics (Prometheus API)
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Victoria Metrics API (POC - open)"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -356,7 +374,7 @@ resource "aws_lb_target_group" "kong" {
     healthy_threshold   = 2
     unhealthy_threshold = 3
     interval            = 30
-    path                = "/health"
+    path                = "/status"
     port                = "8100"
     protocol            = "HTTP"
     timeout             = 5
@@ -401,6 +419,39 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# Metrics endpoint (for Grafana to scrape)
+resource "aws_lb_target_group" "metrics" {
+  name        = "${var.project_name}-metrics-${var.environment}"
+  port        = 8100
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 30
+    path                = "/status"
+    port                = "8100"
+    protocol            = "HTTP"
+    timeout             = 5
+  }
+
+  tags = var.tags
+}
+
+resource "aws_lb_listener" "metrics" {
+  load_balancer_arn = aws_lb.kong.arn
+  port              = 8100
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.metrics.arn
+  }
+}
+
 # -----------------------------------------------------------------------------
 # ECS Service
 # -----------------------------------------------------------------------------
@@ -427,6 +478,12 @@ resource "aws_ecs_service" "kong" {
     target_group_arn = aws_lb_target_group.kong.arn
     container_name   = "kong"
     container_port   = 8000
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.metrics.arn
+    container_name   = "kong"
+    container_port   = 8100
   }
 
   deployment_maximum_percent         = 200

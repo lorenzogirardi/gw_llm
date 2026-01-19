@@ -12,7 +12,7 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "panels": [],
-      "title": "Overview",
+      "title": "Gateway Overview",
       "type": "row"
     },
     {
@@ -23,11 +23,9 @@
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
-          "unit": "reqps"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -44,12 +42,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_http_requests_total[5m]))",
-          "legendFormat": "RPS",
+          "expr": "kong_nginx_requests_total",
           "refId": "A"
         }
       ],
-      "title": "Requests/sec",
+      "title": "Total Requests",
       "type": "stat"
     },
     {
@@ -62,11 +59,11 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 1000 },
-              { "color": "red", "value": 5000 }
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
             ]
           },
-          "unit": "ms"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -83,12 +80,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.50, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "P50",
+          "expr": "kong_nginx_connections_total{state=\"active\"}",
           "refId": "A"
         }
       ],
-      "title": "P50 Latency",
+      "title": "Active Connections",
       "type": "stat"
     },
     {
@@ -96,24 +92,24 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "mappings": [],
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 3000 },
-              { "color": "red", "value": 10000 }
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
             ]
-          },
-          "unit": "ms"
+          }
         },
         "overrides": []
       },
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "id": 3,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -122,12 +118,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "P99",
+          "expr": "up{job=\"kong\"}",
           "refId": "A"
         }
       ],
-      "title": "P99 Latency",
+      "title": "Kong Status",
       "type": "stat"
     },
     {
@@ -135,24 +130,24 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "mappings": [],
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "Unreachable" }, "1": { "color": "green", "text": "Reachable" } }, "type": "value" }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.01 },
-              { "color": "red", "value": 0.05 }
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
             ]
-          },
-          "unit": "percentunit"
+          }
         },
         "overrides": []
       },
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "id": 4,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -161,12 +156,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[5m])) / sum(rate(kong_http_requests_total[5m]))",
-          "legendFormat": "Error Rate",
+          "expr": "kong_datastore_reachable",
           "refId": "A"
         }
       ],
-      "title": "Error Rate (5xx)",
+      "title": "Datastore Status",
       "type": "stat"
     },
     {
@@ -177,11 +171,9 @@
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
-          "unit": "percentunit"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -198,12 +190,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_http_requests_total{code=~\"2..\"}[5m])) / sum(rate(kong_http_requests_total[5m]))",
-          "legendFormat": "Success Rate",
+          "expr": "kong_nginx_timers{state=\"running\"}",
           "refId": "A"
         }
       ],
-      "title": "Success Rate",
+      "title": "Running Timers",
       "type": "stat"
     },
     {
@@ -224,7 +215,7 @@
       "id": 6,
       "options": {
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -233,12 +224,11 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(count by (service) (kong_http_requests_total))",
-          "legendFormat": "Services",
+          "expr": "kong_nginx_timers{state=\"pending\"}",
           "refId": "A"
         }
       ],
-      "title": "Active Services",
+      "title": "Pending Timers",
       "type": "stat"
     },
     {
@@ -246,7 +236,7 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 101,
       "panels": [],
-      "title": "Request Metrics",
+      "title": "Traffic",
       "type": "row"
     },
     {
@@ -255,17 +245,18 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 20,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
@@ -274,29 +265,26 @@
             "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
           "unit": "reqps"
         },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-      "id": 7,
+      "id": 10,
       "options": {
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_http_requests_total[5m])) by (service)",
-          "legendFormat": "{{service}}",
+          "expr": "rate(kong_nginx_requests_total[5m])",
+          "legendFormat": "Requests/sec",
           "refId": "A"
         }
       ],
-      "title": "Requests per Second by Service",
+      "title": "Request Rate",
       "type": "timeseries"
     },
     {
@@ -305,52 +293,64 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 20,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "normal" },
+            "stacking": { "group": "A", "mode": "none" },
             "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          },
-          "unit": "reqps"
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
         },
-        "overrides": [
-          { "matcher": { "id": "byRegexp", "options": ".*2.." }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
-          { "matcher": { "id": "byRegexp", "options": ".*4.." }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
-          { "matcher": { "id": "byRegexp", "options": ".*5.." }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
-        ]
+        "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-      "id": 8,
+      "id": 11,
       "options": {
-        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_http_requests_total[5m])) by (code)",
-          "legendFormat": "{{code}}",
+          "expr": "kong_nginx_connections_total{state=\"active\"}",
+          "legendFormat": "Active",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "kong_nginx_connections_total{state=\"reading\"}",
+          "legendFormat": "Reading",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "kong_nginx_connections_total{state=\"writing\"}",
+          "legendFormat": "Writing",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "kong_nginx_connections_total{state=\"waiting\"}",
+          "legendFormat": "Waiting",
+          "refId": "D"
         }
       ],
-      "title": "Requests by Status Code",
+      "title": "Connections",
       "type": "timeseries"
     },
     {
@@ -358,7 +358,7 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "id": 102,
       "panels": [],
-      "title": "Latency",
+      "title": "Memory",
       "type": "row"
     },
     {
@@ -367,6 +367,7 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -376,8 +377,8 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
@@ -386,41 +387,26 @@
             "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          },
-          "unit": "ms"
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "bytes"
         },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-      "id": 9,
+      "id": 20,
       "options": {
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.50, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "P50",
+          "expr": "kong_memory_workers_lua_vms_bytes",
+          "legendFormat": "{{pid}}",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.90, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "P90",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "P99",
-          "refId": "C"
         }
       ],
-      "title": "Request Latency Percentiles",
+      "title": "Worker Lua VM Memory",
       "type": "timeseries"
     },
     {
@@ -429,6 +415,7 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -438,8 +425,8 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
@@ -448,29 +435,26 @@
             "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          },
-          "unit": "ms"
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "percentunit"
         },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "id": 10,
+      "id": 21,
       "options": {
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le, service))",
-          "legendFormat": "{{service}}",
+          "expr": "kong_memory_lua_shared_dict_bytes / kong_memory_lua_shared_dict_total_bytes",
+          "legendFormat": "{{shared_dict}}",
           "refId": "A"
         }
       ],
-      "title": "P99 Latency by Service",
+      "title": "Shared Dict Usage",
       "type": "timeseries"
     },
     {
@@ -478,77 +462,63 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "id": 103,
       "panels": [],
-      "title": "Bandwidth",
+      "title": "Node Info",
       "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": { "mode": "thresholds" },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
-          },
-          "unit": "Bps"
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
-      "id": 11,
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 24 },
+      "id": 30,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_bandwidth_bytes{direction=\"ingress\"}[5m]))",
-          "legendFormat": "Ingress",
+          "expr": "kong_node_info",
+          "format": "table",
+          "instant": true,
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(kong_bandwidth_bytes{direction=\"egress\"}[5m]))",
-          "legendFormat": "Egress",
-          "refId": "B"
         }
       ],
-      "title": "Bandwidth",
-      "type": "timeseries"
+      "title": "Kong Node Info",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "style": "dark",
-  "tags": ["kong", "api", "gateway"],
+  "tags": ["kong", "gateway", "api"],
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "Amazon Managed Prometheus", "value": "Amazon Managed Prometheus" },
+        "current": { "selected": false, "text": "Kong Metrics", "value": "Kong Metrics" },
         "hide": 0,
         "includeAll": false,
-        "label": "Data Source",
+        "label": "Datasource",
         "multi": false,
         "name": "datasource",
         "options": [],
@@ -565,6 +535,5 @@
   "timezone": "browser",
   "title": "Kong Gateway",
   "uid": "kong-gateway",
-  "version": 1,
-  "weekStart": ""
+  "version": 1
 }

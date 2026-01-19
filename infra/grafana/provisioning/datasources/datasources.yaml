@@ -22,3 +22,14 @@ datasources:
       authType: default
       defaultRegion: ${AWS_REGION}
     editable: true
+
+  # Kong Metrics (via Victoria Metrics)
+  - name: Kong Metrics
+    type: prometheus
+    access: proxy
+    url: http://kong-llm-gateway-poc-1159371345.us-west-1.elb.amazonaws.com:9090
+    isDefault: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "15s"
+    editable: true

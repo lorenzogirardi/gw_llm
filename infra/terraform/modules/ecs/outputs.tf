@@ -114,6 +114,11 @@ output "kong_endpoint_https" {
   value       = var.certificate_arn != "" ? "https://${aws_lb.kong.dns_name}" : null
 }
 
+output "metrics_endpoint" {
+  description = "Kong Prometheus metrics endpoint (internal)"
+  value       = "http://${aws_lb.kong.dns_name}:8100"
+}
+
 # -----------------------------------------------------------------------------
 # CloudWatch
 # -----------------------------------------------------------------------------

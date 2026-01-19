@@ -52,6 +52,12 @@ variable "admin_cidr_blocks" {
   default     = ["10.0.0.0/8"]
 }
 
+variable "vpc_cidr" {
+  description = "VPC CIDR block (for internal metrics access)"
+  type        = string
+  default     = "10.0.0.0/8"
+}
+
 # -----------------------------------------------------------------------------
 # ECS Task Configuration
 # -----------------------------------------------------------------------------

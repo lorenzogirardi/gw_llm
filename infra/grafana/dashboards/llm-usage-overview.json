@@ -603,7 +603,7 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "Amazon Managed Prometheus", "value": "Amazon Managed Prometheus" },
+        "current": { "selected": false, "text": "Kong Metrics", "value": "Kong Metrics" },
         "hide": 0,
         "includeAll": false,
         "label": "Data Source",
