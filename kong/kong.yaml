@@ -423,7 +423,7 @@ plugins:
     config:
       add:
         headers:
-          - "X-Bedrock-Model:anthropic.claude-3-5-sonnet-20240620-v1:0"
+          - "X-Bedrock-Model:anthropic.claude-opus-4-20250514-v1:0"
           - "X-Consumer-Role:developer"
     tags:
       - transform
@@ -434,7 +434,7 @@ plugins:
     config:
       add:
         headers:
-          - "X-Bedrock-Model:anthropic.claude-3-sonnet-20240229-v1:0"
+          - "X-Bedrock-Model:anthropic.claude-sonnet-4-20250514-v1:0"
           - "X-Consumer-Role:analyst"
     tags:
       - transform
@@ -445,7 +445,7 @@ plugins:
     config:
       add:
         headers:
-          - "X-Bedrock-Model:anthropic.claude-3-sonnet-20240229-v1:0"
+          - "X-Bedrock-Model:anthropic.claude-sonnet-4-20250514-v1:0"
           - "X-Consumer-Role:ecommerce_ops"
     tags:
       - transform

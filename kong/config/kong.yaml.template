@@ -181,7 +181,7 @@ consumers:
 
 keyauth_credentials:
   - consumer: developer
-    key: hRbLUp1HJtMgVemwJQR6GzeIBbRsf7xI
+    key: CHANGE_ME_DEVELOPER_KEY
 
   - consumer: production
-    key: xBQQDv9gitRU3kTdZ7ilZk+9NgQgjn6G
+    key: CHANGE_ME_PRODUCTION_KEY
