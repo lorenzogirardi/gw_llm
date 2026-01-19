@@ -1,347 +1,149 @@
 # Project Status: Kong LLM Gateway
 
 **Last Updated:** 2026-01-19
-**Current Phase:** POC Implementation - ECS Fargate + AMP + AMG
+**Current Phase:** POC Implementation - ECS Fargate + Victoria Metrics + Grafana
 
 ---
 
-## POC Environment (In Progress)
+## POC Environment (DEPLOYED)
+
+### Live Endpoints
+
+| Service | URL |
+|---------|-----|
+| **API (CloudFront)** | https://d18l8nt8fin3hz.cloudfront.net |
+| **Grafana** | https://d18l8nt8fin3hz.cloudfront.net/grafana |
+| **Kong ALB** | kong-llm-gateway-poc-1159371345.us-west-1.elb.amazonaws.com |
+| **Kong Metrics** | http://kong-llm-gateway-poc-1159371345.us-west-1.elb.amazonaws.com:8100/metrics |
+| **Victoria Metrics** | http://kong-llm-gateway-poc-1159371345.us-west-1.elb.amazonaws.com:9090 |
+
+### Credentials
+
+- **Grafana**: admin / FsdnbxMi7erbiSYg. (stored in Secrets Manager)
+- **Kong API Key**: dev-api-key-changeme
 
 ### Architecture
 
 ```
-┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
-│   Clients   │     │       ECS Fargate (Kong)         │     │   AWS Bedrock   │
-│(claude-code)│────▶│  ┌────────────────────────────┐  │────▶│                 │
-│             │     │  │ Kong Gateway (DB-less)     │  │     │  - Claude Opus  │
-└─────────────┘     │  │ + Custom Plugins           │  │     │  - Claude Sonnet│
-                    │  └────────────────────────────┘  │     │  - Claude Haiku │
-                    └──────────────────────────────────┘     └─────────────────┘
-                                    │
-                                    ▼
-                           ┌──────────────┐
-                           │     AMP      │
-                           │  (Prometheus)│
-                           └──────┬───────┘
-                                  │
-                                  ▼
-                           ┌──────────────┐
-                           │     AMG      │
-                           │  (Grafana)   │
-                           └──────────────┘
+┌─────────────┐     ┌──────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
+│   Clients   │────▶│  CloudFront  │────▶│       ECS Fargate Cluster        │────▶│   AWS Bedrock   │
+│             │     │   (HTTPS)    │     │  ┌────────────────────────────┐  │     │                 │
+└─────────────┘     └──────────────┘     │  │ Kong Gateway (DB-less)     │  │     │  - Claude Opus  │
+                                         │  │ + bedrock-proxy plugin     │  │     │  - Claude Sonnet│
+                                         │  │ + token-meter plugin       │  │     │  - Claude Haiku │
+                                         │  │ + ecommerce-guardrails     │  │     └─────────────────┘
+                                         │  └────────────────────────────┘  │
+                                         │  ┌────────────────────────────┐  │
+                                         │  │ Victoria Metrics           │  │
+                                         │  │ (Prometheus scraper)       │  │
+                                         │  └────────────────────────────┘  │
+                                         │  ┌────────────────────────────┐  │
+                                         │  │ Grafana OSS                │  │
+                                         │  │ (Dashboards)               │  │
+                                         │  └────────────────────────────┘  │
+                                         └──────────────────────────────────┘
+                                                        │
+                                                        ▼
+                                               ┌──────────────┐
+                                               │     AMP      │
+                                               │  (unused)    │
+                                               └──────────────┘
 ```
-
-**Note**: POC non include Datadog (sarà aggiunto in prod)
 
 ### POC Components
 
-| Component | Service | Estimated Cost |
-|-----------|---------|----------------|
-| Kong Gateway | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8/month |
-| Metrics | Amazon Managed Prometheus (AMP) | ~$5-8/month |
-| Dashboards | Amazon Managed Grafana (AMG) | ~$9/month |
-| LLM | Bedrock Opus 4.5 | Pay per use |
-| **Total Fixed** | | **~$22-25/month** |
+| Component | Service | Status | Notes |
+|-----------|---------|--------|-------|
+| Kong Gateway | ECS Fargate (0.25 vCPU, 512MB) | RUNNING | FARGATE (no Spot) |
+| Victoria Metrics | ECS Fargate (0.25 vCPU, 512MB) | RUNNING | Scrapes Kong metrics |
+| Grafana OSS | ECS Fargate (0.25 vCPU, 512MB) | RUNNING | Custom image with dashboards |
+| CloudFront | CDN | RUNNING | HTTPS termination |
+| AMP | Managed Prometheus | CREATED | Not used (no ADOT collector) |
+
+### Recent Changes (2026-01-19)
+
+1. **Kong Health Check Fixed**: Changed from `/health` to `/status` on port 8100
+2. **Container Health Check Fixed**: Changed from `curl` to `kong health` command
+3. **Switched to FARGATE**: Removed FARGATE_SPOT for stability
+4. **Victoria Metrics Added**: Scrapes Kong /metrics and exposes Prometheus API on port 9090
+5. **Security Group Updated**: Opened ports 8100 and 9090 for metrics access
+6. **Grafana Password**: Stored in AWS Secrets Manager
+7. **Victoria Metrics Command Fixed**: Fixed shell quoting in task definition using heredoc
+8. **Grafana Datasource Updated**: Kong Metrics now points to Victoria Metrics (port 9090)
+9. **Dashboards Updated**: kong-gateway.json and llm-usage-overview.json use Prometheus queries
+10. **Grafana Image Rebuilt**: Pushed new image with updated datasource config
 
 ### POC Terraform Modules
 
 | Module | Status | Path |
 |--------|--------|------|
-| ECS Fargate | ✅ Complete | `infra/terraform/modules/ecs/` |
-| AMP | ✅ Complete | `infra/terraform/modules/amp/` |
-| AMG | ✅ Complete | `infra/terraform/modules/amg/` |
-| POC Environment | ✅ Complete | `infra/terraform/environments/poc/` |
+| ECS Fargate | DEPLOYED | `infra/terraform/modules/ecs/` |
+| AMP | DEPLOYED | `infra/terraform/modules/amp/` |
+| Grafana ECS | DEPLOYED | `infra/terraform/modules/grafana-ecs/` |
+| CloudFront | DEPLOYED | `infra/terraform/modules/cloudfront/` |
+| Victoria Metrics | DEPLOYED | `infra/terraform/modules/victoria-metrics/` |
+| POC Environment | DEPLOYED | `infra/terraform/environments/poc/` |
 
-### POC Deployment Commands
+### Grafana Dashboards
+
+| Dashboard | Datasource | Status |
+|-----------|------------|--------|
+| Infrastructure | CloudWatch | WORKING |
+| Kong Gateway | Victoria Metrics | WORKING |
+| LLM Usage Overview | Victoria Metrics | WORKING |
+
+### TODO
+
+1. [x] Wait for Victoria Metrics to be healthy
+2. [x] Update Grafana "Kong Metrics" datasource to point to Victoria Metrics (port 9090)
+3. [x] Restore kong-gateway.json and llm-usage-overview.json dashboards with Prometheus queries
+4. [ ] Test dashboards show Kong metrics data
+
+---
+
+## Test Commands
 
 ```bash
-cd infra/terraform/environments/poc
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-terraform init
-terraform plan
-terraform apply
-```
+# Test Kong health (via CloudFront)
+curl https://d18l8nt8fin3hz.cloudfront.net/health
 
----
-
-## Project Overview
-
-Kong OSS API Gateway for Amazon Bedrock LLM proxy with RBAC, token metering, and e-commerce guardrails.
-
-### Key Features
-- **Multi-model routing**: Claude Opus, Sonnet, Haiku + Gemini based on user roles
-- **RBAC via Kong Consumers/Groups**: developer, analyst, admin, ecommerce_ops, guest
-- **Token metering**: CloudWatch + response headers for Bedrock consumption
-- **E-commerce guardrails**: Block SQL injection, credit card, password patterns
-- **Dual deployment**: EKS (prod) + Docker Compose (local/dev)
-
----
-
-## Completed Sessions
-
-| Day | Focus | Key Results |
-|-----|-------|-------------|
-| 1 | Claude Code Setup | Skills configured for Kong/Lua/Bedrock |
-
----
-
-## Architecture
-
-```
-┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
-│   Clients   │     │         Kong Gateway (OSS)       │     │   AWS Bedrock   │
-│  (JWT/Okta) │────▶│  ┌────────────────────────────┐  │────▶│                 │
-│             │     │  │ Plugins:                   │  │     │  - Claude Opus  │
-└─────────────┘     │  │ - jwt/key-auth             │  │     │  - Claude Sonnet│
-                    │  │ - rate-limiting (token)    │  │     │  - Claude Haiku │
-                    │  │ - ai-aws-guardrails        │  │     │                 │
-                    │  │ - bedrock-proxy (custom)   │  │     └─────────────────┘
-                    │  │ - prometheus/datadog       │  │
-                    │  └────────────────────────────┘  │
-                    └──────────────────────────────────┘
-```
-
----
-
-## Role-Based Model Access
-
-| Role | Models | Rate Limit | Notes |
-|------|--------|------------|-------|
-| `admin` | All models | Unlimited | Full access |
-| `developer` | Opus, Sonnet, Haiku | 10 req/s, 100K tokens/day | AI coding, feature development |
-| `analyst` | Haiku, Titan | 5 req/s, 50K tokens/day | Data analysis |
-| `ecommerce_ops` | Haiku | 3 req/s, 20K tokens/day | Product descriptions |
-| `guest` | Haiku | 1 req/s, 1K tokens/day | Limited demo access |
-
-### Model IDs
-
-| Model | Bedrock Model ID |
-|-------|------------------|
-| Claude Opus 4 | `anthropic.claude-opus-4-20250514-v1:0` |
-| Claude Sonnet 4 | `anthropic.claude-sonnet-4-20250514-v1:0` |
-| Claude Haiku | `anthropic.claude-3-haiku-20240307-v1:0` |
-| Titan Text | `amazon.titan-text-express-v1` |
-
-### Kong Consumer Groups
-
-```yaml
-consumer_groups:
-  - name: admin
-    consumers: [admin-user]
-  - name: developer
-    consumers: [dev-user-1, dev-user-2]
-  - name: analyst
-    consumers: [analyst-user]
-  - name: ecommerce_ops
-    consumers: [ops-user]
-  - name: guest
-    consumers: [guest-user]
-```
-
----
-
-## Deliverables Checklist
-
-### Configuration Files
-- [x] `docker-compose.yml` - Local Kong + Postgres + Mock Bedrock
-- [x] `kong/kong.yaml` - Declarative DB-less config with RBAC
-- [x] `infra/helm/kong/values-*.yaml` - EKS Helm values (base, dev, prod)
-
-### Infrastructure
-- [x] `infra/terraform/modules/eks/` - EKS cluster
-- [x] `infra/terraform/modules/kong/` - Kong Helm deployment
-- [x] `infra/terraform/modules/bedrock/` - IAM/IRSA for Bedrock
-- [x] `infra/terraform/environments/dev/` - Dev environment
-- [x] `infra/terraform/environments/prod/` - Prod environment
-
-### Custom Plugins
-- [x] `kong/plugins/bedrock-proxy/` - Bedrock integration + SigV4
-- [x] `kong/plugins/token-meter/` - Token tracking + cost estimation
-- [x] `kong/plugins/ecommerce-guardrails/` - PCI-DSS/GDPR pattern blocking
-
-### Observability
-- [x] Prometheus configuration (metrics scraping)
-- [x] Datadog integration (prod alerting)
-- [x] Grafana dashboard JSON
-- [ ] CloudWatch Bedrock metrics (pending AWS deploy)
-
-### Automation
-- [x] `Makefile` - multi-env commands
-- [x] ArgoCD manifests (dev + prod)
-- [x] `infra/k8s/kong-config/` - Kustomize for ConfigMaps
-
-### Documentation
-- [x] `docs/architecture/c4-architecture.md` - C4 diagrams with Mermaid
-- [x] `docs/runbooks/high-error-rate.md`
-- [x] `docs/runbooks/high-latency.md`
-- [x] `docs/runbooks/token-quota-exceeded.md`
-- [x] `docs/examples/curl-examples.md` - API testing examples
-- [x] `README.md` - Complete usage guide
-
----
-
-## Technology Stack
-
-| Component | Local (Dev) | Production (EKS) |
-|-----------|-------------|------------------|
-| Kong | Docker (kong:latest) | Helm chart (OSS) |
-| Database | PostgreSQL (compose) | DB-less mode |
-| Auth | JWT (local keys) | Okta/Keycloak |
-| Metrics | File-log + Prometheus | Datadog |
-| AWS Auth | AWS_PROFILE env | IRSA |
-| CDN | - | Akamai |
-| GitOps | - | ArgoCD |
-
----
-
-## Security Considerations
-
-### E-commerce Guardrails (PCI-DSS, GDPR)
-
-**Blocked Patterns** (via `ecommerce-guardrails` plugin):
-- `SQL` / `SELECT` / `DROP` / `INSERT` (injection)
-- `credit card` / `card number` / `CVV`
-- `password` / `secret` / `token`
-- `order hack` / `exploit` / `bypass`
-
-### Logging Rules
-
-| Log | Local | Production |
-|-----|-------|------------|
-| Request metadata | file-log | Datadog |
-| Token counts | file-log | CloudWatch + Datadog |
-| Model used | file-log | Datadog |
-| Latency | Prometheus | Datadog |
-| **Request body** | **NO** | **NO** |
-| **Response body** | **NO** | **NO** |
-| **PII/Credentials** | **NO** | **NO** |
-
-### Compliance Checklist
-- [ ] PCI-DSS: No card data in logs, TLS everywhere
-- [ ] GDPR: No PII in logs, data minimization
-- [ ] Bedrock: Model governance, usage tracking
-
----
-
-## Observability
-
-### Key Metrics
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `kong_bedrock_tokens_input_total` | Counter | Input tokens consumed |
-| `kong_bedrock_tokens_output_total` | Counter | Output tokens generated |
-| `kong_bedrock_request_duration_seconds` | Histogram | Request latency |
-| `kong_bedrock_cost_estimate_dollars` | Gauge | Estimated cost |
-| `kong_bedrock_requests_total` | Counter | Total requests by model/role |
-| `kong_bedrock_errors_total` | Counter | Errors by type |
-
-### Dashboards
-
-| Environment | Tool | Dashboard |
-|-------------|------|-----------|
-| Local | Grafana | `grafana-local.json` |
-| Production | Datadog | Kong LLM Gateway |
-
-### Alerts (Production)
-
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| High token usage | > 100k tokens/hour | Warning |
-| Rate limit hits | > 10/min per consumer | Warning |
-| Bedrock errors | > 5% error rate | Critical |
-| Latency spike | p99 > 30s | Warning |
-
----
-
-## Next Steps (Pending)
-
-### CI/CD & Testing
-- [ ] GitHub Actions CI workflow (lint, test, security scan)
-- [ ] GitHub Actions deploy workflow (EKS via ArgoCD)
-- [ ] Plugin test suite (Pongo/Busted)
-  - [ ] `kong/plugins/bedrock-proxy/spec/handler_spec.lua`
-  - [ ] `kong/plugins/token-meter/spec/handler_spec.lua`
-  - [ ] `kong/plugins/ecommerce-guardrails/spec/handler_spec.lua`
-
-### AWS Deployment
-- [ ] Deploy to EKS (pending AWS account readiness)
-- [ ] Configure IRSA for Bedrock access
-- [ ] Validate NLB and DNS setup
-
-### Post-Deploy Tests (AWS)
-- [ ] Smoke tests (health check, basic request)
-- [ ] Integration tests (all endpoints, all roles)
-- [ ] Load tests (rate limiting validation)
-- [ ] Security tests (guardrails validation)
-
-### Cleanup
-- [ ] Consolidate `observability/` directories
-- [ ] Add LICENSE file (MIT)
-
----
-
-## Blockers
-
-- AWS account not ready for deployment
-
----
-
-## Infrastructure Status
-
-| Resource | State | Notes |
-|----------|-------|-------|
-| EKS Cluster | NOT CREATED | Terraform pending |
-| Kong (local) | NOT RUNNING | Docker Compose pending |
-| Bedrock Access | PENDING | IAM policy needed |
-| Datadog | PENDING | API key required |
-
----
-
-## Quick Commands
-
-```bash
-# === LOCAL DEVELOPMENT ===
-make local/up              # Start Kong + Postgres (Docker Compose)
-make local/down            # Stop local environment
-make local/logs            # View Kong logs
-make local/test            # Run plugin tests (Pongo)
-
-# === EKS DEPLOYMENT ===
-make eks/plan              # Terraform plan
-make eks/apply             # Terraform apply
-make eks/deploy            # Helm upgrade Kong
-make eks/status            # Check deployment status
-
-# === VALIDATION ===
-make validate              # deck validate + luacheck
-make test                  # pongo run (all tests)
-make security-scan         # trivy scan
-
-# === DOCKER ONE-LINER (alternative) ===
-docker run -d --name kong \
-  -e "KONG_DATABASE=off" \
-  -e "KONG_DECLARATIVE_CONFIG=/kong/kong.yaml" \
-  -e "AWS_PROFILE=default" \
-  -e "AWS_REGION=us-east-1" \
-  -v $(pwd)/kong:/kong \
-  -p 8000:8000 -p 8443:8443 \
-  kong:latest
-
-# === CURL EXAMPLES ===
-# Local test (with API key)
-curl -X POST http://localhost:8000/v1/chat \
+# Test chat endpoint
+curl -X POST https://d18l8nt8fin3hz.cloudfront.net/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key-123" \
-  -d '{"messages":[{"role":"user","content":"Hello"}]}'
+  -H "apikey: dev-api-key-changeme" \
+  -d '{"model":"claude-haiku","messages":[{"role":"user","content":"Hello"}]}'
 
-# Production test (with JWT)
-curl -X POST https://api.example.com/v1/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <jwt-token>" \
-  -d '{"messages":[{"role":"user","content":"Hello"}]}'
+# View Kong logs
+aws logs tail /ecs/kong-llm-gateway-poc/kong --follow --region us-west-1
+
+# View Victoria Metrics logs
+aws logs tail /ecs/kong-llm-gateway-poc/victoria-metrics --follow --region us-west-1
+
+# Check ECS services
+aws ecs describe-services --cluster kong-llm-gateway-poc --services kong grafana victoria-metrics --region us-west-1 --query 'services[*].{name:serviceName,running:runningCount,desired:desiredCount}'
 ```
+
+---
+
+## Known Issues
+
+1. **ADOT Collector Disabled**: Caused Kong task crashes, disabled `enable_amp_write`
+2. **AMP Not Used**: No metrics being written to AMP since ADOT disabled (using Victoria Metrics instead)
+
+---
+
+## Infrastructure Terraform State
+
+| Resource | State |
+|----------|-------|
+| VPC | CREATED |
+| ECS Cluster | CREATED |
+| Kong Service | RUNNING |
+| Grafana Service | RUNNING |
+| Victoria Metrics Service | RUNNING |
+| ALB | CREATED |
+| CloudFront | CREATED |
+| AMP Workspace | CREATED |
 
 ---
 
