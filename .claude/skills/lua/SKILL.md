@@ -9,6 +9,11 @@ description: >-
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
+# ACTIVATION: Run this FIRST when skill is invoked
+```bash
+touch /tmp/claude_skill_lua
+```
+
 # ABOUTME: Lua skill for Kong Gateway plugin development
 # ABOUTME: Covers Kong PDK, plugin patterns, testing with Pongo and Busted
 

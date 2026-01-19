@@ -7,6 +7,11 @@ description: >-
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
+# ACTIVATION: Run this FIRST when skill is invoked
+```bash
+touch /tmp/claude_skill_aws_bedrock
+```
+
 # ABOUTME: AWS Bedrock integration skill for Kong Gateway
 # ABOUTME: Covers model invocation, IAM, request signing, Terraform
 
