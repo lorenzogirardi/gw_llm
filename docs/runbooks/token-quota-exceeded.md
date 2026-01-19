@@ -153,7 +153,7 @@ kubectl exec -n kong -it $(kubectl get pod -n kong -l app.kubernetes.io/name=kon
 | Role | Daily Token Limit | Model Access | Cost Cap |
 |------|-------------------|--------------|----------|
 | Admin | Unlimited | All | None |
-| Developer | 100,000 | Sonnet, Haiku | $50/day |
+| Developer | 100,000 | Opus, Sonnet, Haiku | $100/day |
 | Analyst | 50,000 | Haiku, Titan | $20/day |
 | Ops | 20,000 | Haiku | $10/day |
 | Guest | 1,000 | Haiku | $1/day |

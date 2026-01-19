@@ -725,7 +725,7 @@ curl -X POST http://localhost:8000/v1/chat/developer \
 | Endpoint | Role | Models |
 |----------|------|--------|
 | `POST /v1/chat/admin` | Admin | All |
-| `POST /v1/chat/developer` | Developer | Sonnet, Haiku |
+| `POST /v1/chat/developer` | Developer | Opus, Sonnet, Haiku |
 | `POST /v1/chat/analyst` | Analyst | Haiku, Titan |
 | `POST /v1/chat/ops` | Ops | Haiku |
 | `POST /v1/chat/guest` | Guest | Haiku |

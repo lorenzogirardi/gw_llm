@@ -294,7 +294,7 @@ flowchart TB
     admin --> opus & sonnet & haiku & titan
     admin --> admin_limit
 
-    developer --> sonnet & haiku
+    developer --> opus & sonnet & haiku
     developer --> dev_limit
 
     analyst --> haiku & titan
