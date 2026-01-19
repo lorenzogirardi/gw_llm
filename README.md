@@ -223,41 +223,30 @@ flowchart LR
 
 ### Model Routing by Role
 
-```mermaid
-flowchart TB
-    subgraph Consumers
-        admin[Admin]
-        dev[Developer]
-        analyst[Analyst]
-        ops[Ops]
-        guest[Guest]
-    end
+| Role | Route | Available Models |
+|------|-------|------------------|
+| Admin | `/v1/chat/admin` | Opus, Sonnet, Haiku, Titan |
+| Developer | `/v1/chat/developer` | Opus, Sonnet, Haiku |
+| Analyst | `/v1/chat/analyst` | Haiku, Titan |
+| Ops | `/v1/chat/ops` | Haiku |
+| Guest | `/v1/chat/guest` | Haiku |
 
-    subgraph Routes
-        r_admin[/v1/chat/admin]
-        r_dev[/v1/chat/developer]
-        r_analyst[/v1/chat/analyst]
-        r_ops[/v1/chat/ops]
-        r_guest[/v1/chat/guest]
-    end
-
-    subgraph Models
-        opus[Claude Opus<br/>$15/M input]
-        sonnet[Claude Sonnet<br/>$3/M input]
-        haiku[Claude Haiku<br/>$0.25/M input]
-        titan[Titan Text<br/>$0.30/M input]
-    end
-
-    admin --> r_admin --> opus & sonnet & haiku & titan
-    dev --> r_dev --> sonnet & haiku
-    analyst --> r_analyst --> haiku & titan
-    ops --> r_ops --> haiku
-    guest --> r_guest --> haiku
-
-    style opus fill:#ff6b6b
-    style sonnet fill:#4ecdc4
-    style haiku fill:#95e1d3
-    style titan fill:#f7dc6f
+```
+                                    ┌─────────────┐
+                               ┌───▶│ Claude Opus │◀─── Admin, Developer
+                               │    └─────────────┘
+                               │
+┌──────────┐    ┌─────────┐    │    ┌──────────────┐
+│ Consumer │───▶│  Route  │────┼───▶│Claude Sonnet │◀─── Admin, Developer
+└──────────┘    └─────────┘    │    └──────────────┘
+                               │
+                               │    ┌──────────────┐
+                               ├───▶│ Claude Haiku │◀─── All Roles
+                               │    └──────────────┘
+                               │
+                               │    ┌──────────────┐
+                               └───▶│  Titan Text  │◀─── Admin, Analyst
+                                    └──────────────┘
 ```
 
 ---
@@ -267,7 +256,7 @@ flowchart TB
 | Role | Rate Limit | Token Limit | Models | Use Case |
 |------|------------|-------------|--------|----------|
 | **Admin** | Unlimited | Unlimited | All | Full access, debugging |
-| **Developer** | 10 req/s | 100K/day | Sonnet, Haiku | Feature development |
+| **Developer** | 10 req/s | 100K/day | Opus, Sonnet, Haiku | Feature development, AI coding |
 | **Analyst** | 5 req/s | 50K/day | Haiku, Titan | Data analysis |
 | **Ops** | 3 req/s | 20K/day | Haiku | Product descriptions |
 | **Guest** | 1 req/s | 1K/day | Haiku | Limited demo access |

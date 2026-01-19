@@ -2,16 +2,49 @@
 #
 # This configuration enables:
 # - Kong metrics collection via DogStatsD
-# - APM tracing integration
+# - Integration with Prometheus metrics
 # - Log collection and parsing
-# - Custom LLM metrics
+# - Alerting (replaces AlertManager)
 #
 # Prerequisites:
 # - Datadog Agent installed in the cluster
 # - DD_API_KEY configured as Kubernetes secret
 
-# Datadog Agent configuration (add to datadog-values.yaml or ConfigMap)
 ---
+# =============================================================================
+# Datadog Agent Helm Values (add to your datadog-values.yaml)
+# =============================================================================
+# To deploy Datadog Agent:
+#   helm repo add datadog https://helm.datadoghq.com
+#   helm install datadog datadog/datadog \
+#     --set datadog.apiKey=${DD_API_KEY} \
+#     -f datadog-values.yaml
+#
+# Example datadog-values.yaml snippet:
+#
+# datadog:
+#   apiKey: <your-api-key>
+#   site: datadoghq.com  # or datadoghq.eu for EU
+#   logs:
+#     enabled: true
+#     containerCollectAll: true
+#   apm:
+#     enabled: true
+#   processAgent:
+#     enabled: true
+#   prometheusScrape:
+#     enabled: true
+#     serviceEndpoints: true
+#
+# clusterAgent:
+#   enabled: true
+#   metricsProvider:
+#     enabled: true
+
+---
+# =============================================================================
+# Kong Integration Configuration
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,49 +63,64 @@ data:
     instances:
       # Kong status endpoint for metrics
       - kong_status_url: http://kong-kong-status.kong.svc:8100/status
-        # Enable Prometheus endpoint scraping
+
+        # Collect metrics from Prometheus endpoint
         openmetrics_endpoint: http://kong-kong-status.kong.svc:8100/metrics
 
-        # Custom tags for filtering
+        # Custom tags
         tags:
-          - env:${DD_ENV}
+          - env:${DD_ENV:-dev}
           - service:kong-llm-gateway
           - team:platform
 
         # Collect all available metrics
         collect_default_metrics: true
 
-        # Custom metrics for LLM tracking
+        # Custom LLM metrics to collect
         extra_metrics:
           - kong_llm_tokens_total
           - kong_llm_input_tokens_total
           - kong_llm_output_tokens_total
           - kong_llm_cost_total
           - kong_guardrail_blocks_total
+          - kong_http_requests_total
+          - kong_request_latency_ms
 
 ---
-# Kong Pod annotations for Datadog autodiscovery
+# =============================================================================
+# Kong Pod Annotations for Autodiscovery
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kong-datadog-annotations
   namespace: kong
+  annotations:
+    description: "Add these annotations to Kong Helm values"
 data:
-  annotations.yaml: |
-    # Add these annotations to Kong deployment
-    annotations:
-      # Enable autodiscovery for Kong integration
-      ad.datadoghq.com/kong.check_names: '["kong"]'
-      ad.datadoghq.com/kong.init_configs: '[{}]'
+  pod-annotations.yaml: |
+    podAnnotations:
+      # Enable Datadog autodiscovery for Kong
+      ad.datadoghq.com/kong.check_names: '["kong", "openmetrics"]'
+      ad.datadoghq.com/kong.init_configs: '[{}, {}]'
       ad.datadoghq.com/kong.instances: |
         [
           {
-            "kong_status_url": "http://%%host%%:8100/status",
-            "openmetrics_endpoint": "http://%%host%%:8100/metrics"
+            "kong_status_url": "http://%%host%%:8100/status"
+          },
+          {
+            "prometheus_url": "http://%%host%%:8100/metrics",
+            "namespace": "kong",
+            "metrics": [
+              "kong_http_requests_total",
+              "kong_request_latency_ms*",
+              "kong_llm_*",
+              "kong_guardrail_*"
+            ]
           }
         ]
 
-      # Enable APM tracing
+      # Log collection
       ad.datadoghq.com/kong.logs: |
         [
           {
@@ -82,225 +130,328 @@ data:
               {
                 "type": "multi_line",
                 "name": "kong_access_log",
-                "pattern": "^\\d{4}/\\d{2}/\\d{2}"
+                "pattern": "^\\{"
               }
             ]
           }
         ]
 
 ---
-# Datadog Dashboard Configuration (export as JSON)
+# =============================================================================
+# Datadog Monitors (Alerts) - Terraform/API Format
+# =============================================================================
+# These monitors can be created via:
+# - Datadog Terraform provider
+# - Datadog API
+# - Datadog UI (import JSON)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadog-kong-monitors
+  namespace: datadog
+  annotations:
+    description: "Datadog monitor definitions for Kong LLM Gateway"
+data:
+  monitors.json: |
+    [
+      {
+        "name": "[Kong LLM] High Error Rate",
+        "type": "metric alert",
+        "query": "sum(last_5m):sum:kong.http.requests.total{service:kong-llm-gateway,code:5*}.as_rate() / sum:kong.http.requests.total{service:kong-llm-gateway}.as_rate() * 100 > 5",
+        "message": "Kong LLM Gateway error rate is {{value}}%\n\nEnvironment: {{env}}\n\n@slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform"],
+        "options": {
+          "thresholds": {
+            "critical": 10,
+            "warning": 5
+          },
+          "notify_no_data": false,
+          "renotify_interval": 60
+        },
+        "priority": 2
+      },
+      {
+        "name": "[Kong LLM] High P95 Latency",
+        "type": "metric alert",
+        "query": "avg(last_5m):p95:kong.request.latency.ms{service:kong-llm-gateway} > 5000",
+        "message": "Kong LLM Gateway P95 latency is {{value}}ms\n\n@slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform"],
+        "options": {
+          "thresholds": {
+            "critical": 10000,
+            "warning": 5000
+          }
+        },
+        "priority": 3
+      },
+      {
+        "name": "[Kong LLM] Pods Down",
+        "type": "metric alert",
+        "query": "avg(last_5m):avg:kubernetes.pods.running{kube_deployment:kong-kong} < 2",
+        "message": "Kong LLM Gateway has insufficient running pods: {{value}}\n\n@pagerduty-platform @slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform"],
+        "options": {
+          "thresholds": {
+            "critical": 1,
+            "warning": 2
+          }
+        },
+        "priority": 1
+      },
+      {
+        "name": "[Kong LLM] High Token Usage",
+        "type": "metric alert",
+        "query": "sum(last_1h):sum:kong.llm.tokens.total{*} by {consumer} > 100000",
+        "message": "Consumer {{consumer.name}} has high token usage: {{value}} tokens/hour\n\n@slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform"],
+        "options": {
+          "thresholds": {
+            "critical": 500000,
+            "warning": 100000
+          }
+        },
+        "priority": 3
+      },
+      {
+        "name": "[Kong LLM] Daily Cost Threshold",
+        "type": "metric alert",
+        "query": "sum(last_1d):sum:kong.llm.cost.total{service:kong-llm-gateway} > 100",
+        "message": "Daily LLM cost exceeded: ${{value}}\n\n@slack-finance-alerts @slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform", "cost:llm"],
+        "options": {
+          "thresholds": {
+            "critical": 500,
+            "warning": 100
+          }
+        },
+        "priority": 2
+      },
+      {
+        "name": "[Kong LLM] Guardrail Blocks Spike",
+        "type": "metric alert",
+        "query": "sum(last_15m):sum:kong.guardrail.blocks.total{*} by {category}.as_count() > 50",
+        "message": "High guardrail blocks for {{category.name}}: {{value}}\n\n@slack-security-alerts",
+        "tags": ["service:kong-llm-gateway", "team:security"],
+        "options": {
+          "thresholds": {
+            "critical": 100,
+            "warning": 50
+          }
+        },
+        "priority": 3
+      },
+      {
+        "name": "[Kong LLM] Rate Limit Exceeded",
+        "type": "metric alert",
+        "query": "sum(last_5m):sum:kong.http.requests.total{code:429,service:kong-llm-gateway}.as_rate() > 10",
+        "message": "High rate of 429 responses: {{value}}/s\n\nConsumers may be hitting rate limits.\n\n@slack-kong-alerts",
+        "tags": ["service:kong-llm-gateway", "team:platform"],
+        "options": {
+          "thresholds": {
+            "critical": 50,
+            "warning": 10
+          }
+        },
+        "priority": 4
+      }
+    ]
+
+---
+# =============================================================================
+# Datadog Dashboard Definition
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: datadog-kong-dashboard
   namespace: datadog
+  annotations:
+    description: "Import this dashboard via Datadog API or UI"
 data:
   dashboard.json: |
     {
       "title": "Kong LLM Gateway",
       "description": "Monitoring dashboard for Kong API Gateway with Bedrock integration",
+      "layout_type": "ordered",
       "widgets": [
         {
           "definition": {
-            "title": "Request Rate",
-            "type": "timeseries",
-            "requests": [
+            "title": "Overview",
+            "type": "group",
+            "layout_type": "ordered",
+            "widgets": [
               {
-                "q": "sum:kong.http.requests.total{$env,$service}.as_rate()",
-                "display_type": "line"
+                "definition": {
+                  "title": "Request Rate",
+                  "type": "query_value",
+                  "requests": [{"q": "sum:kong.http.requests.total{$env,$service}.as_rate()"}],
+                  "precision": 1
+                }
+              },
+              {
+                "definition": {
+                  "title": "Error Rate %",
+                  "type": "query_value",
+                  "requests": [{"q": "sum:kong.http.requests.total{$env,$service,code:5*}.as_rate() / sum:kong.http.requests.total{$env,$service}.as_rate() * 100"}],
+                  "precision": 2,
+                  "custom_unit": "%"
+                }
+              },
+              {
+                "definition": {
+                  "title": "P95 Latency",
+                  "type": "query_value",
+                  "requests": [{"q": "p95:kong.request.latency.ms{$env,$service}"}],
+                  "precision": 0,
+                  "custom_unit": "ms"
+                }
+              },
+              {
+                "definition": {
+                  "title": "Active Pods",
+                  "type": "query_value",
+                  "requests": [{"q": "avg:kubernetes.pods.running{kube_deployment:kong-kong}"}],
+                  "precision": 0
+                }
               }
             ]
           }
         },
         {
           "definition": {
-            "title": "Error Rate",
-            "type": "timeseries",
-            "requests": [
+            "title": "LLM Token Usage",
+            "type": "group",
+            "layout_type": "ordered",
+            "widgets": [
               {
-                "q": "sum:kong.http.requests.total{$env,$service,code:5*}.as_rate() / sum:kong.http.requests.total{$env,$service}.as_rate() * 100",
-                "display_type": "line"
+                "definition": {
+                  "title": "Tokens by Model",
+                  "type": "timeseries",
+                  "requests": [{"q": "sum:kong.llm.tokens.total{$env,$service} by {model}.as_count()"}]
+                }
+              },
+              {
+                "definition": {
+                  "title": "Tokens by Consumer",
+                  "type": "timeseries",
+                  "requests": [{"q": "sum:kong.llm.tokens.total{$env,$service} by {consumer}.as_count()"}]
+                }
               }
             ]
           }
         },
         {
           "definition": {
-            "title": "Token Usage by Model",
-            "type": "timeseries",
-            "requests": [
+            "title": "Cost Tracking",
+            "type": "group",
+            "layout_type": "ordered",
+            "widgets": [
               {
-                "q": "sum:kong.llm.tokens.total{$env,$service} by {model}.as_count()",
-                "display_type": "bars"
+                "definition": {
+                  "title": "Total Cost (24h)",
+                  "type": "query_value",
+                  "requests": [{"q": "sum:kong.llm.cost.total{$env,$service}"}],
+                  "precision": 2,
+                  "custom_unit": "$"
+                }
+              },
+              {
+                "definition": {
+                  "title": "Cost by Model",
+                  "type": "toplist",
+                  "requests": [{"q": "sum:kong.llm.cost.total{$env,$service} by {model}"}]
+                }
+              },
+              {
+                "definition": {
+                  "title": "Cost by Consumer",
+                  "type": "toplist",
+                  "requests": [{"q": "sum:kong.llm.cost.total{$env,$service} by {consumer}"}]
+                }
               }
             ]
           }
         },
         {
           "definition": {
-            "title": "Estimated Cost",
-            "type": "query_value",
-            "requests": [
+            "title": "Security & Guardrails",
+            "type": "group",
+            "layout_type": "ordered",
+            "widgets": [
               {
-                "q": "sum:kong.llm.cost.total{$env,$service}",
-                "aggregator": "last"
-              }
-            ],
-            "precision": 2,
-            "autoscale": true,
-            "custom_unit": "$"
-          }
-        },
-        {
-          "definition": {
-            "title": "P95 Latency",
-            "type": "timeseries",
-            "requests": [
+                "definition": {
+                  "title": "Guardrail Blocks by Category",
+                  "type": "timeseries",
+                  "requests": [{"q": "sum:kong.guardrail.blocks.total{$env,$service} by {category}.as_count()"}]
+                }
+              },
               {
-                "q": "p95:kong.request.latency.ms{$env,$service}",
-                "display_type": "line"
+                "definition": {
+                  "title": "Rate Limit Hits",
+                  "type": "timeseries",
+                  "requests": [{"q": "sum:kong.http.requests.total{$env,$service,code:429}.as_count()"}]
+                }
               }
             ]
           }
         },
         {
           "definition": {
-            "title": "Guardrail Blocks",
-            "type": "timeseries",
-            "requests": [
+            "title": "Traffic Analysis",
+            "type": "group",
+            "layout_type": "ordered",
+            "widgets": [
               {
-                "q": "sum:kong.guardrail.blocks.total{$env,$service} by {rule}.as_count()",
-                "display_type": "bars"
+                "definition": {
+                  "title": "Requests by Status Code",
+                  "type": "timeseries",
+                  "requests": [{"q": "sum:kong.http.requests.total{$env,$service} by {code}.as_rate()"}]
+                }
+              },
+              {
+                "definition": {
+                  "title": "Latency Percentiles",
+                  "type": "timeseries",
+                  "requests": [
+                    {"q": "p50:kong.request.latency.ms{$env,$service}", "display_type": "line"},
+                    {"q": "p95:kong.request.latency.ms{$env,$service}", "display_type": "line"},
+                    {"q": "p99:kong.request.latency.ms{$env,$service}", "display_type": "line"}
+                  ]
+                }
               }
             ]
           }
         }
       ],
       "template_variables": [
-        {
-          "name": "env",
-          "default": "*",
-          "prefix": "env"
-        },
-        {
-          "name": "service",
-          "default": "kong-llm-gateway",
-          "prefix": "service"
-        }
-      ],
-      "layout_type": "ordered"
+        {"name": "env", "default": "*", "prefix": "env"},
+        {"name": "service", "default": "kong-llm-gateway", "prefix": "service"}
+      ]
     }
 
 ---
-# Datadog Monitors (Alerts)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: datadog-kong-monitors
-  namespace: datadog
-data:
-  monitors.yaml: |
-    # High Error Rate Alert
-    - name: "[Kong LLM] High Error Rate"
-      type: metric alert
-      query: "sum(last_5m):sum:kong.http.requests.total{service:kong-llm-gateway,code:5*}.as_rate() / sum:kong.http.requests.total{service:kong-llm-gateway}.as_rate() * 100 > 5"
-      message: |
-        Kong LLM Gateway is experiencing high error rate: {{value}}%
-
-        Service: {{service.name}}
-        Environment: {{env}}
-
-        @slack-kong-alerts
-      tags:
-        - service:kong-llm-gateway
-        - env:{{env}}
-      priority: 2
-      thresholds:
-        critical: 10
-        warning: 5
-
-    # High Latency Alert
-    - name: "[Kong LLM] High P95 Latency"
-      type: metric alert
-      query: "avg(last_5m):p95:kong.request.latency.ms{service:kong-llm-gateway} > 5000"
-      message: |
-        Kong LLM Gateway P95 latency is high: {{value}}ms
-
-        @slack-kong-alerts
-      tags:
-        - service:kong-llm-gateway
-      priority: 3
-      thresholds:
-        critical: 10000
-        warning: 5000
-
-    # Token Quota Alert
-    - name: "[Kong LLM] High Token Usage"
-      type: metric alert
-      query: "sum(last_1h):sum:kong.llm.tokens.total{service:kong-llm-gateway} by {consumer} > 100000"
-      message: |
-        Consumer {{consumer.name}} has high token usage: {{value}} tokens/hour
-
-        Consider reviewing rate limits or usage patterns.
-
-        @slack-kong-alerts
-      tags:
-        - service:kong-llm-gateway
-      priority: 3
-      thresholds:
-        critical: 500000
-        warning: 100000
-
-    # Cost Threshold Alert
-    - name: "[Kong LLM] Daily Cost Threshold"
-      type: metric alert
-      query: "sum(last_1d):sum:kong.llm.cost.total{service:kong-llm-gateway} > 100"
-      message: |
-        Daily LLM cost threshold exceeded: ${{value}}
-
-        Review consumer usage patterns and consider adjustments.
-
-        @slack-kong-alerts @pagerduty-platform
-      tags:
-        - service:kong-llm-gateway
-      priority: 2
-      thresholds:
-        critical: 500
-        warning: 100
-
-    # Bedrock Connection Alert
-    - name: "[Kong LLM] Bedrock Connection Issues"
-      type: metric alert
-      query: "sum(last_5m):sum:kong.upstream.target.health{upstream:*bedrock*,state:unhealthy}.as_count() > 0"
-      message: |
-        Kong cannot reach Bedrock API endpoints.
-
-        Check AWS Bedrock service status and IAM permissions.
-
-        @slack-kong-alerts @pagerduty-platform
-      tags:
-        - service:kong-llm-gateway
-      priority: 1
-      thresholds:
-        critical: 1
-
-    # Guardrail Blocks Alert
-    - name: "[Kong LLM] Guardrail Blocks Spike"
-      type: metric alert
-      query: "sum(last_15m):sum:kong.guardrail.blocks.total{service:kong-llm-gateway} by {rule}.as_count() > 50"
-      message: |
-        High number of guardrail blocks for rule: {{rule.name}}
-
-        Blocked count: {{value}}
-
-        Review request patterns for potential issues.
-
-        @slack-security-alerts
-      tags:
-        - service:kong-llm-gateway
-        - security:guardrail
-      priority: 3
-      thresholds:
-        critical: 100
-        warning: 50
+# =============================================================================
+# Terraform Configuration for Datadog Monitors
+# =============================================================================
+# If using Terraform, add this to your datadog.tf:
+#
+# provider "datadog" {
+#   api_key = var.datadog_api_key
+#   app_key = var.datadog_app_key
+# }
+#
+# resource "datadog_monitor" "kong_error_rate" {
+#   name    = "[Kong LLM] High Error Rate"
+#   type    = "metric alert"
+#   query   = "sum(last_5m):sum:kong.http.requests.total{service:kong-llm-gateway,code:5*}.as_rate() / sum:kong.http.requests.total{service:kong-llm-gateway}.as_rate() * 100 > 5"
+#   message = "Kong error rate is {{value}}% @slack-kong-alerts"
+#
+#   thresholds = {
+#     critical = 10
+#     warning  = 5
+#   }
+#
+#   notify_no_data = false
+#   tags           = ["service:kong-llm-gateway", "team:platform"]
+# }

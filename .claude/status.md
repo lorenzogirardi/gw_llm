@@ -46,14 +46,22 @@ Kong OSS API Gateway for Amazon Bedrock LLM proxy with RBAC, token metering, and
 
 ## Role-Based Model Access
 
-| Role | Model | Model ID | Rate Limit | Notes |
-|------|-------|----------|------------|-------|
-| `admin` | All models | * | Unlimited | Full access |
-| `developer` | Claude 3.5 Sonnet | `anthropic.claude-3-5-sonnet-20240620-v1:0` | 10k tokens/min | claude-code usage |
-| `analyst` | Claude 3 Sonnet | `anthropic.claude-3-sonnet-20240229-v1:0` | 5k tokens/min | Analysis tasks |
-| `ecommerce_ops` | Claude 3 Sonnet | `anthropic.claude-3-sonnet-20240229-v1:0` | 2k tokens/min | Operations |
-| `guest` | Claude 3 Haiku | `anthropic.claude-3-haiku-20240307-v1:0` | 500 tokens/min | Basic queries |
-| `other` | Gemini 1.5 Flash | `google/gemini-1.5-flash` | 1k tokens/min | Fallback |
+| Role | Models | Rate Limit | Notes |
+|------|--------|------------|-------|
+| `admin` | All models | Unlimited | Full access |
+| `developer` | Opus, Sonnet, Haiku | 10 req/s, 100K tokens/day | AI coding, feature development |
+| `analyst` | Haiku, Titan | 5 req/s, 50K tokens/day | Data analysis |
+| `ecommerce_ops` | Haiku | 3 req/s, 20K tokens/day | Product descriptions |
+| `guest` | Haiku | 1 req/s, 1K tokens/day | Limited demo access |
+
+### Model IDs
+
+| Model | Bedrock Model ID |
+|-------|------------------|
+| Claude Opus 4 | `anthropic.claude-opus-4-20250514-v1:0` |
+| Claude Sonnet 4 | `anthropic.claude-sonnet-4-20250514-v1:0` |
+| Claude Haiku | `anthropic.claude-3-haiku-20240307-v1:0` |
+| Titan Text | `amazon.titan-text-express-v1` |
 
 ### Kong Consumer Groups
 
@@ -76,38 +84,40 @@ consumer_groups:
 ## Deliverables Checklist
 
 ### Configuration Files
-- [ ] `docker-compose.yml` - Local Kong + Postgres
-- [ ] `kong-local.yaml` - Declarative DB-less config
-- [ ] `helm/kong-values.yaml` - EKS production values
-- [ ] `kong-prod.yaml` - EKS declarative config
+- [x] `docker-compose.yml` - Local Kong + Postgres + Mock Bedrock
+- [x] `kong/kong.yaml` - Declarative DB-less config with RBAC
+- [x] `infra/helm/kong/values-*.yaml` - EKS Helm values (base, dev, prod)
 
 ### Infrastructure
-- [ ] `infra/terraform/modules/eks/` - EKS cluster
-- [ ] `infra/terraform/modules/kong/` - Kong Ingress Controller
-- [ ] `infra/terraform/modules/bedrock/` - IAM/IRSA for Bedrock
+- [x] `infra/terraform/modules/eks/` - EKS cluster
+- [x] `infra/terraform/modules/kong/` - Kong Helm deployment
+- [x] `infra/terraform/modules/bedrock/` - IAM/IRSA for Bedrock
+- [x] `infra/terraform/environments/dev/` - Dev environment
+- [x] `infra/terraform/environments/prod/` - Prod environment
 
 ### Custom Plugins
-- [ ] `kong/plugins/bedrock-proxy/` - Bedrock integration
-- [ ] `kong/plugins/token-meter/` - Token tracking
-- [ ] `kong/plugins/ecommerce-guardrails/` - Pattern blocking
+- [x] `kong/plugins/bedrock-proxy/` - Bedrock integration + SigV4
+- [x] `kong/plugins/token-meter/` - Token tracking + cost estimation
+- [x] `kong/plugins/ecommerce-guardrails/` - PCI-DSS/GDPR pattern blocking
 
 ### Observability
-- [ ] Prometheus metrics exporter
-- [ ] Datadog integration (prod)
-- [ ] Grafana dashboard (`grafana-local.json`)
-- [ ] CloudWatch Bedrock metrics
+- [x] Prometheus configuration (metrics scraping)
+- [x] Datadog integration (prod alerting)
+- [x] Grafana dashboard JSON
+- [ ] CloudWatch Bedrock metrics (pending AWS deploy)
 
 ### Automation
-- [ ] `Makefile` - multi-env commands
-- [ ] ArgoCD manifests (zero-downtime)
-- [ ] HPA configuration (EKS)
+- [x] `Makefile` - multi-env commands
+- [x] ArgoCD manifests (dev + prod)
+- [x] `infra/k8s/kong-config/` - Kustomize for ConfigMaps
 
 ### Documentation
-- [ ] `docs/architecture/context.md` - C4 Level 1
-- [ ] `docs/architecture/container.md` - C4 Level 2
-- [ ] `docs/runbooks/deployment.md`
-- [ ] `docs/runbooks/incident-response.md`
-- [ ] curl examples (local + prod)
+- [x] `docs/architecture/c4-architecture.md` - C4 diagrams with Mermaid
+- [x] `docs/runbooks/high-error-rate.md`
+- [x] `docs/runbooks/high-latency.md`
+- [x] `docs/runbooks/token-quota-exceeded.md`
+- [x] `docs/examples/curl-examples.md` - API testing examples
+- [x] `README.md` - Complete usage guide
 
 ---
 
