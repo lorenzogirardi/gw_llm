@@ -73,10 +73,10 @@ module "vpc" {
   private_subnets = var.private_subnet_cidrs
   public_subnets  = var.public_subnet_cidrs
 
-  enable_nat_gateway     = false  # Using NAT instance instead
-  single_nat_gateway     = true   # Single route table for all private subnets
-  enable_dns_hostnames   = true
-  enable_dns_support     = true
+  enable_nat_gateway   = false # Using NAT instance instead
+  single_nat_gateway   = true  # Single route table for all private subnets
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 
   tags = local.tags
 }
@@ -105,7 +105,7 @@ module "vpc" {
 # https://fck-nat.dev/
 data "aws_ami" "fck_nat" {
   most_recent = true
-  owners      = ["568608671756"]  # fck-nat owner
+  owners      = ["568608671756"] # fck-nat owner
 
   filter {
     name   = "name"
@@ -119,7 +119,7 @@ data "aws_ami" "fck_nat" {
 }
 
 resource "aws_security_group" "nat_instance" {
-  name        = "nat-instance-sg"  # Match existing CLI-created SG
+  name        = "nat-instance-sg" # Match existing CLI-created SG
   description = "Security group for NAT instance"
   vpc_id      = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
 
@@ -159,7 +159,7 @@ resource "aws_instance" "nat" {
   })
 
   lifecycle {
-    ignore_changes = [ami]  # Don't replace on AMI updates
+    ignore_changes = [ami] # Don't replace on AMI updates
   }
 }
 
@@ -182,32 +182,32 @@ module "ecs" {
   environment  = local.environment
 
   # Network
-  vpc_id             = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
-  vpc_cidr           = var.vpc_cidr
-  private_subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
-  public_subnet_ids  = var.create_vpc ? module.vpc[0].public_subnets : var.public_subnet_ids
+  vpc_id              = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  vpc_cidr            = var.vpc_cidr
+  private_subnet_ids  = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
+  public_subnet_ids   = var.create_vpc ? module.vpc[0].public_subnets : var.public_subnet_ids
   allowed_cidr_blocks = var.allowed_cidr_blocks
 
   # Task configuration (minimal for POC)
-  kong_image     = var.kong_image
-  task_cpu       = 256   # 0.25 vCPU
-  task_memory    = 512   # 512 MB
-  desired_count  = 1
-  use_spot       = false  # Use regular Fargate for stability
+  kong_image    = var.kong_image
+  task_cpu      = 256 # 0.25 vCPU
+  task_memory   = 512 # 512 MB
+  desired_count = 1
+  use_spot      = false # Use regular Fargate for stability
 
   # Scaling disabled for POC
   enable_autoscaling = false
 
   # ALB
-  internal_alb                = false
-  certificate_arn             = var.certificate_arn
-  enable_deletion_protection  = false  # Easy cleanup for POC
+  internal_alb               = false
+  certificate_arn            = var.certificate_arn
+  enable_deletion_protection = false # Easy cleanup for POC
 
   # Observability
   enable_container_insights = true
   log_retention_days        = 7
-  amp_workspace_id          = ""     # AMP disabled
-  enable_amp_write          = false  # AMP disabled
+  amp_workspace_id          = ""    # AMP disabled
+  enable_amp_write          = false # AMP disabled
 
   # Bedrock models
   allowed_model_arns = [
@@ -298,8 +298,8 @@ module "cloudfront" {
   alb_dns_name = module.ecs.alb_dns_name
 
   # Settings
-  price_class = "PriceClass_100"  # US, Canada, Europe only
-  enable_waf  = false             # Disable WAF for POC (cost savings)
+  price_class = "PriceClass_100" # US, Canada, Europe only
+  enable_waf  = false            # Disable WAF for POC (cost savings)
 
   tags = local.tags
 }
@@ -327,7 +327,7 @@ module "litellm" {
   task_cpu       = 1024
   task_memory    = 2048
   desired_count  = 1
-  use_spot       = false  # Use regular Fargate for stability
+  use_spot       = false # Use regular Fargate for stability
 
   # Secrets
   master_key_secret_arn = var.litellm_master_key_secret_arn

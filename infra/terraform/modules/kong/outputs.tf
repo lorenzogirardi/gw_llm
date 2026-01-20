@@ -48,12 +48,12 @@ output "ingress_class" {
 output "helm_values_summary" {
   description = "Summary of key Helm values applied"
   value = {
-    chart_version         = var.chart_version
-    kong_image            = "${var.kong_image_repository}:${var.kong_image_tag}"
-    ingress_controller    = var.enable_ingress_controller
-    autoscaling           = var.enable_autoscaling
-    service_monitor       = var.enable_service_monitor
-    admin_api             = var.enable_admin_api
-    irsa_enabled          = var.service_account_role_arn != ""
+    chart_version      = var.chart_version
+    kong_image         = "${var.kong_image_repository}:${var.kong_image_tag}"
+    ingress_controller = var.enable_ingress_controller
+    autoscaling        = var.enable_autoscaling
+    service_monitor    = var.enable_service_monitor
+    admin_api          = var.enable_admin_api
+    irsa_enabled       = var.service_account_role_arn != ""
   }
 }

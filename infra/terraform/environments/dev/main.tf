@@ -256,10 +256,10 @@ data "local_file" "guardrails_schema" {
 module "kong" {
   source = "../../modules/kong"
 
-  namespace            = "kong"
-  release_name         = "kong"
-  chart_version        = "2.33.0"
-  kong_image_tag       = "3.6"
+  namespace      = "kong"
+  release_name   = "kong"
+  chart_version  = "2.33.0"
+  kong_image_tag = "3.6"
 
   # IRSA for Bedrock access
   service_account_name     = "kong"
@@ -285,9 +285,9 @@ module "kong" {
   }
 
   # Dev environment settings
-  enable_admin_api      = true  # Enable for dev, disable in prod
-  enable_autoscaling    = false # Disable in dev for cost savings
-  min_replicas          = 1
+  enable_admin_api       = true  # Enable for dev, disable in prod
+  enable_autoscaling     = false # Disable in dev for cost savings
+  min_replicas           = 1
   enable_service_monitor = true
 
   # Resources (smaller for dev)

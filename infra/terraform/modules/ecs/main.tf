@@ -113,8 +113,8 @@ locals {
       extensions = ["sigv4auth"]
       pipelines = {
         metrics = {
-          receivers  = ["prometheus"]
-          exporters  = ["prometheusremotewrite"]
+          receivers = ["prometheus"]
+          exporters = ["prometheusremotewrite"]
         }
       }
     }

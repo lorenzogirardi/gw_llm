@@ -92,15 +92,15 @@ resource "helm_release" "kong" {
     yamlencode({
       # DB-less mode
       env = {
-        database = "off"
+        database           = "off"
         declarative_config = "/kong_dbless/kong.yaml"
         plugins = join(",", concat(
           ["bundled"],
           keys(var.custom_plugins)
         ))
         # Bedrock proxy settings
-        nginx_proxy_proxy_buffer_size    = "128k"
-        nginx_proxy_proxy_buffers        = "4 256k"
+        nginx_proxy_proxy_buffer_size       = "128k"
+        nginx_proxy_proxy_buffers           = "4 256k"
         nginx_proxy_proxy_busy_buffers_size = "256k"
       }
 
@@ -121,26 +121,26 @@ resource "helm_release" "kong" {
 
       # Ingress Controller
       ingressController = {
-        enabled            = var.enable_ingress_controller
-        installCRDs        = var.install_crds
-        ingressClass       = var.ingress_class
-        watchNamespaces    = var.watch_namespaces
+        enabled         = var.enable_ingress_controller
+        installCRDs     = var.install_crds
+        ingressClass    = var.ingress_class
+        watchNamespaces = var.watch_namespaces
       }
 
       # Proxy service
       proxy = {
-        enabled = true
-        type    = var.proxy_service_type
+        enabled     = true
+        type        = var.proxy_service_type
         annotations = var.proxy_annotations
         http = {
-          enabled     = true
+          enabled       = true
           containerPort = 8000
-          servicePort = 80
+          servicePort   = 80
         }
         tls = {
-          enabled     = var.enable_tls
+          enabled       = var.enable_tls
           containerPort = 8443
-          servicePort = 443
+          servicePort   = 443
         }
       }
 
@@ -186,15 +186,15 @@ resource "helm_release" "kong" {
             }
           }
         }]
-      } : {
+        } : {
         enabled = false
       }
 
       # Pod disruption budget
       podDisruptionBudget = var.enable_pdb ? {
-        enabled        = true
-        minAvailable   = var.pdb_min_available
-      } : {
+        enabled      = true
+        minAvailable = var.pdb_min_available
+        } : {
         enabled = false
       }
 

@@ -217,10 +217,10 @@ data "local_file" "guardrails_schema" {
 module "kong" {
   source = "../../modules/kong"
 
-  namespace            = "kong"
-  release_name         = "kong"
-  chart_version        = "2.33.0"
-  kong_image_tag       = "3.6"
+  namespace      = "kong"
+  release_name   = "kong"
+  chart_version  = "2.33.0"
+  kong_image_tag = "3.6"
 
   # IRSA for Bedrock access
   service_account_name     = "kong"
@@ -246,7 +246,7 @@ module "kong" {
   }
 
   # Production settings
-  enable_admin_api       = false  # Disabled in production
+  enable_admin_api       = false # Disabled in production
   enable_autoscaling     = true
   min_replicas           = 3
   max_replicas           = 20
@@ -270,9 +270,9 @@ module "kong" {
 
   # NLB configuration for production
   proxy_annotations = {
-    "service.beta.kubernetes.io/aws-load-balancer-type"                    = "nlb"
-    "service.beta.kubernetes.io/aws-load-balancer-scheme"                  = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"         = "ip"
+    "service.beta.kubernetes.io/aws-load-balancer-type"                              = "nlb"
+    "service.beta.kubernetes.io/aws-load-balancer-scheme"                            = "internet-facing"
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"                   = "ip"
     "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
   }
 

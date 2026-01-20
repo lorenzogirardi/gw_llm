@@ -32,7 +32,7 @@ variable "alb_dns_name" {
 variable "price_class" {
   description = "CloudFront price class"
   type        = string
-  default     = "PriceClass_100"  # US, Canada, Europe only (cheapest)
+  default     = "PriceClass_100" # US, Canada, Europe only (cheapest)
 }
 
 variable "geo_restriction_type" {
