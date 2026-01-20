@@ -115,3 +115,12 @@ variable "grafana_admin_password_secret_arn" {
   type        = string
   default     = ""
 }
+
+# -----------------------------------------------------------------------------
+# LiteLLM Configuration
+# -----------------------------------------------------------------------------
+
+variable "litellm_master_key_secret_arn" {
+  description = "Secrets Manager ARN for LiteLLM master key"
+  type        = string
+}

@@ -1,39 +1,39 @@
-# POC Environment - Example Variables
-#
-# Copy this file to terraform.tfvars and customize values
-#
-# cp terraform.tfvars.example terraform.tfvars
+# POC Environment - Configuration Example
+# Copy this to terraform.tfvars and fill in your values
+# Region: us-west-1
 
-# AWS region
 aws_region = "us-west-1"
 
-# VPC Configuration
-# Set create_vpc = false to use existing VPC
+# VPC Configuration - Create new VPC
 create_vpc = true
 vpc_cidr   = "10.10.0.0/16"
 
-availability_zones   = ["us-west-1a", "us-west-1b"]
+availability_zones   = ["us-west-1b", "us-west-1c"]
 private_subnet_cidrs = ["10.10.1.0/24", "10.10.2.0/24"]
 public_subnet_cidrs  = ["10.10.101.0/24", "10.10.102.0/24"]
 
-# If using existing VPC (create_vpc = false):
-# vpc_id             = "vpc-xxxxxxxxx"
-# private_subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
-# public_subnet_ids  = ["subnet-cccc", "subnet-dddd"]
+# Network access (open for POC - restrict in production)
+allowed_cidr_blocks = ["0.0.0.0/0"]
 
-# Network access (restrict for security)
-allowed_cidr_blocks = ["0.0.0.0/0"]  # Change to your IP range
+# Kong configuration - custom image with plugins from ECR
+kong_image = "YOUR_ACCOUNT_ID.dkr.ecr.us-west-1.amazonaws.com/kong-llm-gateway:latest"
 
-# Kong configuration
-kong_image = "kong:3.6"
+# Grafana configuration - custom image with dashboards from ECR
+grafana_image = "YOUR_ACCOUNT_ID.dkr.ecr.us-west-1.amazonaws.com/grafana-llm-gateway:latest"
 
-# HTTPS certificate (optional - leave empty for HTTP only)
-# certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/xxxxx"
+# No HTTPS for POC (HTTP only)
 certificate_arn = ""
 
-# Grafana authentication
+# Grafana authentication via AWS SSO
 grafana_auth_providers = ["AWS_SSO"]
 
-# Grafana admin users (SSO user IDs)
-# Find user IDs in AWS IAM Identity Center
+# Grafana admin users - will be configured after deployment
 grafana_admin_user_ids = []
+
+# Grafana admin password from Secrets Manager
+# Create secret: aws secretsmanager create-secret --name kong-llm-gateway/grafana-admin-password --secret-string "YOUR_PASSWORD"
+grafana_admin_password_secret_arn = "arn:aws:secretsmanager:us-west-1:YOUR_ACCOUNT_ID:secret:kong-llm-gateway/grafana-admin-password-XXXXXX"
+
+# LiteLLM configuration
+# Create secret: aws secretsmanager create-secret --name litellm-poc/master-key --secret-string "sk-litellm-YOUR_KEY_HERE"
+litellm_master_key_secret_arn = "arn:aws:secretsmanager:us-west-1:YOUR_ACCOUNT_ID:secret:litellm-poc/master-key-XXXXXX"

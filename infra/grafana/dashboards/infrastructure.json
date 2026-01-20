@@ -46,7 +46,7 @@
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
-          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "kong" },
+          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "litellm" },
           "expression": "",
           "id": "",
           "matchExact": true,
@@ -61,7 +61,7 @@
           "statistic": "Average"
         }
       ],
-      "title": "Kong Running Tasks",
+      "title": "LiteLLM Running Tasks",
       "type": "stat"
     },
     {
@@ -144,7 +144,7 @@
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
-          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "kong" },
+          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "litellm" },
           "expression": "",
           "id": "",
           "matchExact": true,
@@ -159,7 +159,7 @@
           "statistic": "Average"
         }
       ],
-      "title": "Kong CPU Usage",
+      "title": "LiteLLM CPU Usage",
       "type": "stat"
     },
     {
@@ -193,7 +193,7 @@
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
-          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "kong" },
+          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "litellm" },
           "expression": "",
           "id": "",
           "matchExact": true,
@@ -208,7 +208,7 @@
           "statistic": "Average"
         }
       ],
-      "title": "Kong Memory Usage",
+      "title": "LiteLLM Memory Usage",
       "type": "stat"
     },
     {
@@ -359,7 +359,7 @@
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
-          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "kong" },
+          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "litellm" },
           "expression": "",
           "id": "",
           "matchExact": true,
@@ -436,7 +436,7 @@
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
-          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "kong" },
+          "dimensions": { "ClusterName": "${cluster}", "ServiceName": "litellm" },
           "expression": "",
           "id": "",
           "matchExact": true,

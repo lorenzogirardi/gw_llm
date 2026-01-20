@@ -292,8 +292,10 @@ resource "aws_iam_role" "grafana_task" {
   tags = var.tags
 }
 
-# AMP Query access
+# AMP Query access (only when AMP is enabled)
 resource "aws_iam_role_policy" "grafana_amp" {
+  count = var.amp_workspace_arn != "" ? 1 : 0
+
   name = "amp-query"
   role = aws_iam_role.grafana_task.id
 

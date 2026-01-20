@@ -531,7 +531,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
       "id": 11,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "legend": { "calcs": ["mean", "max", "p95"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
@@ -548,7 +548,7 @@
           "refId": "B"
         }
       ],
-      "title": "API Latency (p50/p95)",
+      "title": "API Latency by Model (p50/p95)",
       "type": "timeseries"
     },
     {
@@ -580,7 +580,7 @@
             "mode": "absolute",
             "steps": [{ "color": "green", "value": null }]
           },
-          "unit": "percentunit"
+          "unit": "reqps"
         },
         "overrides": []
       },
@@ -593,19 +593,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(litellm_deployment_success_responses_total[5m])) / (sum(rate(litellm_deployment_total_requests_total[5m])) + 0.001)",
-          "legendFormat": "Success Rate",
+          "expr": "sum(rate(litellm_proxy_total_requests_metric_total[5m])) by (requested_model)",
+          "legendFormat": "{{requested_model}}",
           "refId": "A"
         }
       ],
-      "title": "API Success Rate",
+      "title": "Request Rate by Model",
       "type": "timeseries"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["litellm", "llm", "bedrock"],
+  "tags": ["litellm", "llm", "bedrock", "token-tracking"],
   "templating": {
     "list": [
       {
@@ -627,8 +627,8 @@
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "LLM Usage Overview",
-  "uid": "llm-usage-overview",
+  "title": "LiteLLM Usage & Token Tracking",
+  "uid": "litellm-usage",
   "version": 1,
   "weekStart": ""
 }

@@ -1,11 +1,11 @@
-# Kong LLM Gateway - POC Environment
+# LLM Gateway - POC Environment
 #
 # Low-cost POC deployment with:
-# - ECS Fargate (Kong Gateway)
+# - ECS Fargate (LiteLLM Gateway)
 # - Victoria Metrics (Prometheus-compatible)
 # - Grafana OSS on ECS
 # - NAT Instance (t3.nano) instead of NAT Gateway
-# - Bedrock access (Opus 4.5, Sonnet, Haiku)
+# - Bedrock access (Haiku 4.5, Opus, Sonnet)
 #
 # Estimated cost: ~$54/month fixed + Bedrock usage
 
@@ -74,7 +74,7 @@ module "vpc" {
   public_subnets  = var.public_subnet_cidrs
 
   enable_nat_gateway     = false  # Using NAT instance instead
-  single_nat_gateway     = false
+  single_nat_gateway     = true   # Single route table for all private subnets
   enable_dns_hostnames   = true
   enable_dns_support     = true
 
@@ -101,13 +101,15 @@ module "vpc" {
 # NAT Instance (cost-effective alternative to NAT Gateway)
 # -----------------------------------------------------------------------------
 
-data "aws_ami" "amazon_linux_2023" {
+# fck-nat AMI - pre-configured NAT instance (no iptables setup needed)
+# https://fck-nat.dev/
+data "aws_ami" "fck_nat" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["568608671756"]  # fck-nat owner
 
   filter {
     name   = "name"
-    values = ["al2023-ami-2023*-x86_64"]
+    values = ["fck-nat-al2023-*-x86_64*"]
   }
 
   filter {
@@ -117,7 +119,7 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_security_group" "nat_instance" {
-  name        = "${local.project_name}-nat-instance-${local.environment}"
+  name        = "nat-instance-sg"  # Match existing CLI-created SG
   description = "Security group for NAT instance"
   vpc_id      = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
 
@@ -143,24 +145,22 @@ resource "aws_security_group" "nat_instance" {
 }
 
 resource "aws_instance" "nat" {
-  ami                         = data.aws_ami.amazon_linux_2023.id
+  ami                         = data.aws_ami.fck_nat.id
   instance_type               = "t3.nano"
   subnet_id                   = var.create_vpc ? module.vpc[0].public_subnets[0] : var.public_subnet_ids[0]
   vpc_security_group_ids      = [aws_security_group.nat_instance.id]
   associate_public_ip_address = true
   source_dest_check           = false
 
-  user_data = <<-EOF
-    #!/bin/bash
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
-    iptables -t nat -A POSTROUTING -o enX0 -j MASQUERADE
-    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-  EOF
+  # fck-nat comes pre-configured, no user_data needed
 
   tags = merge(local.tags, {
     Name = "${local.project_name}-nat-instance-${local.environment}"
   })
+
+  lifecycle {
+    ignore_changes = [ami]  # Don't replace on AMI updates
+  }
 }
 
 resource "aws_route" "private_nat" {
@@ -270,11 +270,18 @@ module "victoria_metrics" {
   alb_listener_arn      = module.ecs.alb_listener_http_arn
   alb_arn               = module.ecs.alb_arn
 
-  # Kong metrics endpoint
-  kong_metrics_url  = "http://${module.ecs.alb_dns_name}:8100"
-  kong_metrics_host = module.ecs.alb_dns_name
+  # Scrape targets - LiteLLM metrics (trailing slash required)
+  scrape_targets = [
+    {
+      job_name     = "litellm"
+      target       = "${module.ecs.alb_dns_name}:80"
+      metrics_path = "/metrics/"
+    }
+  ]
 
   tags = local.tags
+
+  depends_on = [module.litellm]
 }
 
 # -----------------------------------------------------------------------------
@@ -293,6 +300,105 @@ module "cloudfront" {
   # Settings
   price_class = "PriceClass_100"  # US, Canada, Europe only
   enable_waf  = false             # Disable WAF for POC (cost savings)
+
+  tags = local.tags
+}
+
+# -----------------------------------------------------------------------------
+# LiteLLM Gateway (OpenAI-compatible proxy for Bedrock)
+# -----------------------------------------------------------------------------
+
+module "litellm" {
+  source = "../../modules/litellm"
+
+  project_name = local.project_name
+  environment  = local.environment
+
+  # Network
+  vpc_id                = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  vpc_cidr              = var.vpc_cidr
+  private_subnet_ids    = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
+  alb_security_group_id = module.ecs.alb_security_group_id
+  alb_listener_arn      = module.ecs.alb_listener_http_arn
+  alb_arn               = module.ecs.alb_arn
+
+  # ECS
+  ecs_cluster_id = module.ecs.cluster_id
+  task_cpu       = 1024
+  task_memory    = 2048
+  desired_count  = 1
+  use_spot       = false  # Use regular Fargate for stability
+
+  # Secrets
+  master_key_secret_arn = var.litellm_master_key_secret_arn
+
+  # Bedrock models
+  allowed_bedrock_models = [
+    "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+    "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-5-20251101-v1:0",
+    "arn:aws:bedrock:*:*:inference-profile/*"
+  ]
+
+  # LiteLLM config - using US inference profiles
+  litellm_config = <<-YAML
+model_list:
+  # Claude Haiku 4.5 - default model (using US inference profile)
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: us-west-1
+    model_info:
+      max_tokens: 8192
+      input_cost_per_token: 0.0000008
+      output_cost_per_token: 0.000004
+
+  # Claude Sonnet 4.5 (using US inference profile)
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      aws_region_name: us-west-1
+    model_info:
+      max_tokens: 8192
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
+  # Claude Opus 4.5 (using US inference profile)
+  - model_name: claude-opus-4-5
+    litellm_params:
+      model: bedrock/us.anthropic.claude-opus-4-5-20251101-v1:0
+      aws_region_name: us-west-1
+    model_info:
+      max_tokens: 8192
+      input_cost_per_token: 0.000015
+      output_cost_per_token: 0.000075
+
+  # Aliases for Claude Code compatibility
+  - model_name: claude-3-5-sonnet-20241022
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: us-west-1
+
+  - model_name: claude-sonnet-4-5-20250514
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      aws_region_name: us-west-1
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  cache: false
+  callbacks:
+    - prometheus
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  alerting:
+    - prometheus
+  store_model_in_db: true
+  max_budget: 100
+  budget_duration: 1mo
+YAML
 
   tags = local.tags
 }

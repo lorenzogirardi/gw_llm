@@ -49,7 +49,7 @@ resource "aws_ecs_task_definition" "victoria" {
 
       entryPoint = ["sh", "-c"]
       command = [
-        "cat > /tmp/prometheus.yml << 'EOFCONFIG'\nglobal:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: kong\n    static_configs:\n      - targets: [\"${var.kong_metrics_host}:8100\"]\n    metrics_path: /metrics\nEOFCONFIG\n/victoria-metrics-prod -promscrape.config=/tmp/prometheus.yml -storageDataPath=/victoria-metrics-data -retentionPeriod=7d -httpListenAddr=:8428"
+        "cat > /tmp/prometheus.yml << 'EOFCONFIG'\nglobal:\n  scrape_interval: 15s\nscrape_configs:\n${join("\n", [for target in var.scrape_targets : "  - job_name: ${target.job_name}\n    static_configs:\n      - targets: [\"${target.target}\"]\n    metrics_path: ${target.metrics_path}"])}${var.kong_metrics_host != "" ? "\n  - job_name: kong\n    static_configs:\n      - targets: [\"${var.kong_metrics_host}:8100\"]\n    metrics_path: /metrics" : ""}\nEOFCONFIG\n/victoria-metrics-prod -promscrape.config=/tmp/prometheus.yml -storageDataPath=/victoria-metrics-data -retentionPeriod=7d -httpListenAddr=:8428"
       ]
 
       portMappings = [

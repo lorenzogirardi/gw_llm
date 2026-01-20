@@ -23,8 +23,8 @@ datasources:
       defaultRegion: ${AWS_REGION}
     editable: true
 
-  # Kong Metrics (via Victoria Metrics)
-  - name: Kong Metrics
+  # LiteLLM Metrics (via Victoria Metrics)
+  - name: LiteLLM Metrics
     type: prometheus
     access: proxy
     url: http://kong-llm-gateway-poc-1159371345.us-west-1.elb.amazonaws.com:9090

@@ -29,6 +29,13 @@ docker-compose.override.yml
 credentials.json
 **/secrets/
 
+# Claude status file (contains credentials)
+.claude/status.md
+
+# Terraform tfvars with secrets
+*.auto.tfvars
+terraform.tfvars
+
 # AWS
 .aws/
 

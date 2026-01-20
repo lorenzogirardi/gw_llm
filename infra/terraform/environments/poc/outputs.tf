@@ -37,14 +37,20 @@ output "kong_alb_dns" {
 # Observability
 # -----------------------------------------------------------------------------
 
-output "prometheus_endpoint" {
-  description = "AMP Prometheus endpoint"
-  value       = module.amp.workspace_endpoint
-}
+# AMP outputs disabled - using Victoria Metrics instead
+# output "prometheus_endpoint" {
+#   description = "AMP Prometheus endpoint"
+#   value       = module.amp.workspace_endpoint
+# }
+#
+# output "prometheus_remote_write_url" {
+#   description = "URL for Prometheus remote write"
+#   value       = module.amp.remote_write_url
+# }
 
-output "prometheus_remote_write_url" {
-  description = "URL for Prometheus remote write"
-  value       = module.amp.remote_write_url
+output "victoria_metrics_url" {
+  description = "Victoria Metrics endpoint"
+  value       = module.victoria_metrics.endpoint
 }
 
 # -----------------------------------------------------------------------------
@@ -75,10 +81,11 @@ output "kong_log_group" {
   value       = module.ecs.log_group_name
 }
 
-output "amp_log_group" {
-  description = "AMP CloudWatch Log Group"
-  value       = module.amp.log_group_name
-}
+# AMP disabled - using Victoria Metrics
+# output "amp_log_group" {
+#   description = "AMP CloudWatch Log Group"
+#   value       = module.amp.log_group_name
+# }
 
 output "grafana_log_group" {
   description = "Grafana CloudWatch Log Group"

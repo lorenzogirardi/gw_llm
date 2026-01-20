@@ -40,14 +40,27 @@ variable "alb_arn" {
   type        = string
 }
 
+variable "scrape_targets" {
+  description = "List of scrape targets with job name, host:port, and metrics path"
+  type = list(object({
+    job_name     = string
+    target       = string
+    metrics_path = string
+  }))
+  default = []
+}
+
+# Legacy variables for backward compatibility
 variable "kong_metrics_url" {
-  description = "Kong metrics URL (ALB DNS)"
+  description = "Deprecated: Kong metrics URL"
   type        = string
+  default     = ""
 }
 
 variable "kong_metrics_host" {
-  description = "Kong metrics host (ALB DNS without protocol)"
+  description = "Deprecated: Kong metrics host"
   type        = string
+  default     = ""
 }
 
 variable "log_retention_days" {
