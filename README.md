@@ -1,19 +1,14 @@
-# Kong LLM Gateway for AWS Bedrock
+# LiteLLM Gateway for AWS Bedrock
 
-Enterprise-grade API Gateway for AWS Bedrock with RBAC, token metering, cost tracking, and content guardrails.
+OpenAI-compatible API Gateway for AWS Bedrock with user management, usage tracking, and cost monitoring.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
-- [How It Works](#how-it-works)
-- [RBAC Model](#rbac-model)
+- [Configuration](#configuration)
 - [Monitoring & Observability](#monitoring--observability)
-  - [Token Usage & Cost Tracking](#token-usage--cost-tracking)
-  - [Rule Violations](#monitoring-rule-violations)
-- [Content Guardrails](#content-guardrails)
-  - [Adding Custom Rules](#adding-custom-rules)
 - [Documentation Index](#documentation-index)
 - [API Reference](#api-reference)
 
@@ -23,24 +18,24 @@ Enterprise-grade API Gateway for AWS Bedrock with RBAC, token metering, cost tra
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Kong LLM Gateway                                   │
-│                                                                             │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │   Auth   │───▶│  Rate Limit  │───▶│  Guardrails  │───▶│   Bedrock    │  │
-│  │ (API Key)│    │(tokens/cost) │    │ (PCI/GDPR)   │    │    Proxy     │  │
-│  └──────────┘    └──────────────┘    └──────────────┘    └──────────────┘  │
-│                                                                 │           │
-│                                                          ┌──────▼───────┐  │
-│                                                          │ Token Meter  │  │
-│                                                          │(usage/costs) │  │
-│                                                          └──────────────┘  │
+│                          LiteLLM Gateway                                     │
+│                                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
+│  │   API Key    │───▶│    Budget    │───▶│    Model     │                   │
+│  │    Auth      │    │   Manager    │    │    Router    │                   │
+│  └──────────────┘    └──────────────┘    └──────────────┘                   │
+│                                                 │                            │
+│                                          ┌──────▼───────┐                   │
+│                                          │  Prometheus  │                   │
+│                                          │   Metrics    │                   │
+│                                          └──────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
                     ┌─────────────────┼─────────────────┐
                     ▼                 ▼                 ▼
             ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
             │ Claude Opus  │  │Claude Sonnet │  │ Claude Haiku │
-            │   (complex)  │  │  (balanced)  │  │    (fast)    │
+            │   4.5        │  │   4.5        │  │   4.5        │
             └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -50,41 +45,28 @@ Enterprise-grade API Gateway for AWS Bedrock with RBAC, token metering, cost tra
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant Kong
-    participant Auth
-    participant RateLimit
-    participant Guardrails
-    participant BedrockProxy
-    participant TokenMeter
-    participant Bedrock
-    participant Prometheus
+    participant Client as Claude Code
+    participant CF as CloudFront
+    participant LiteLLM as LiteLLM Proxy
+    participant Bedrock as AWS Bedrock
+    participant VM as Victoria Metrics
 
-    Client->>Kong: POST /v1/chat/developer
-    Kong->>Auth: Validate API Key
-    Auth-->>Kong: ✓ Consumer: developer-team
+    Client->>CF: POST /v1/chat/completions
+    CF->>LiteLLM: Forward request
 
-    Kong->>RateLimit: Check limits
-    RateLimit-->>Kong: ✓ 5/10 req/s used
+    LiteLLM->>LiteLLM: Validate API Key
+    LiteLLM->>LiteLLM: Check User Budget
 
-    Kong->>Guardrails: Scan content
-
-    alt Content Blocked
-        Guardrails-->>Client: 403 Forbidden
-        Guardrails->>Prometheus: guardrail_blocks++
-    else Content OK
-        Guardrails-->>Kong: ✓ Clean
+    alt Budget OK
+        LiteLLM->>Bedrock: InvokeModel (SigV4)
+        Bedrock-->>LiteLLM: Response + tokens
+        LiteLLM->>LiteLLM: Record metrics
+        LiteLLM-->>Client: 200 OK
+    else Budget Exceeded
+        LiteLLM-->>Client: 429 Budget Exceeded
     end
 
-    Kong->>BedrockProxy: Transform & Route
-    BedrockProxy->>Bedrock: InvokeModel (SigV4)
-    Bedrock-->>BedrockProxy: Response + tokens
-
-    BedrockProxy->>TokenMeter: Track usage
-    TokenMeter->>Prometheus: tokens_total++
-    TokenMeter->>Prometheus: cost_total++
-
-    TokenMeter-->>Client: Response + X-Token-* headers
+    VM->>LiteLLM: Scrape /metrics/
 ```
 
 ### Deployment Architecture
@@ -92,594 +74,142 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph Internet
-        clients[API Clients]
+        clients[Claude Code / API Clients]
     end
 
-    subgraph AWS["AWS Cloud"]
+    subgraph AWS["AWS Cloud (us-west-1)"]
+        cf[CloudFront]
+
         subgraph VPC["VPC"]
-            nlb[Network Load Balancer]
+            alb[Application Load Balancer]
 
-            subgraph EKS["EKS Cluster"]
-                subgraph kong_ns["kong namespace"]
-                    kong1[Kong Pod 1]
-                    kong2[Kong Pod 2]
-                    kong3[Kong Pod 3]
-                end
-
-                subgraph monitoring["monitoring namespace"]
-                    prometheus[Prometheus]
-                    grafana[Grafana]
-                end
+            subgraph ECS["ECS Fargate"]
+                litellm[LiteLLM Proxy]
+                grafana[Grafana]
+                victoria[Victoria Metrics]
             end
         end
 
         bedrock[AWS Bedrock]
-        cloudwatch[CloudWatch]
-        iam[IAM + IRSA]
+        secrets[Secrets Manager]
     end
 
-    clients --> nlb
-    nlb --> kong1 & kong2 & kong3
-    kong1 & kong2 & kong3 --> bedrock
-    kong1 & kong2 & kong3 --> cloudwatch
-    kong1 & kong2 & kong3 -.-> iam
-    prometheus --> kong1 & kong2 & kong3
-    grafana --> prometheus
+    clients --> cf
+    cf --> alb
+    alb --> litellm
+    alb --> grafana
+    litellm --> bedrock
+    victoria --> litellm
+    grafana --> victoria
 ```
 
 ---
 
 ## Quick Start
 
-### Local Development
+### For Claude Code Users
+
+Add these environment variables to your shell:
 
 ```bash
-# Start the stack
-make local/up
+export ANTHROPIC_BASE_URL="https://d18l8nt8fin3hz.cloudfront.net"
+export ANTHROPIC_API_KEY="<your-api-key>"
+```
 
-# Test with API call
-curl -X POST http://localhost:8000/v1/chat/developer \
+Then use Claude Code normally - requests will route through the gateway.
+
+### Test API Access
+
+```bash
+# Test with curl
+curl -X POST "$ANTHROPIC_BASE_URL/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: developer-key-12345" \
+  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
   -d '{
-    "model": "claude-haiku",
+    "model": "claude-haiku-4-5",
     "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 100
+    "max_tokens": 50
+  }'
+```
+
+### View Usage Dashboard
+
+Open Grafana at: https://d18l8nt8fin3hz.cloudfront.net/grafana
+
+---
+
+## Configuration
+
+### Available Models
+
+| Model Name | Description | Status |
+|------------|-------------|--------|
+| `claude-haiku-4-5` | Fast, cost-effective | Working |
+| `claude-sonnet-4-5` | Balanced performance | Pending AWS approval |
+| `claude-opus-4-5` | Most capable | Pending AWS approval |
+
+### User Management
+
+Users are created via the LiteLLM Admin API:
+
+```bash
+# Create user with budget
+curl -X POST "$ANTHROPIC_BASE_URL/user/new" \
+  -H "Authorization: Bearer <MASTER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_email": "user@example.com",
+    "max_budget": 10.0,
+    "budget_duration": "monthly"
   }'
 
-# View dashboards
-open http://localhost:3001  # Grafana
-open http://localhost:9090  # Prometheus
+# Generate API key for user
+curl -X POST "$ANTHROPIC_BASE_URL/key/generate" \
+  -H "Authorization: Bearer <MASTER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<USER_ID>",
+    "key_alias": "user-laptop"
+  }'
 ```
-
-### EKS Deployment
-
-```bash
-# 1. Deploy infrastructure
-make terraform/init ENV=dev
-make terraform/apply ENV=dev
-
-# 2. Configure kubectl
-aws eks update-kubeconfig --name kong-llm-gateway-dev --region us-east-1
-
-# 3. Deploy Kong
-make eks/deploy ENV=dev
-```
-
----
-
-## How It Works
-
-### Request Processing Pipeline
-
-```mermaid
-flowchart LR
-    subgraph Input
-        req[API Request]
-    end
-
-    subgraph "1. Authentication"
-        auth{API Key<br/>Valid?}
-    end
-
-    subgraph "2. Rate Limiting"
-        rate{Within<br/>Limits?}
-    end
-
-    subgraph "3. Content Guardrails"
-        guard{Content<br/>Safe?}
-    end
-
-    subgraph "4. Bedrock Proxy"
-        transform[Transform to<br/>Bedrock format]
-        sign[Sign with SigV4]
-        invoke[Invoke Model]
-    end
-
-    subgraph "5. Token Metering"
-        count[Count tokens]
-        cost[Calculate cost]
-        headers[Add headers]
-    end
-
-    subgraph Output
-        resp[API Response]
-    end
-
-    req --> auth
-    auth -->|No| err1[401 Unauthorized]
-    auth -->|Yes| rate
-    rate -->|No| err2[429 Too Many Requests]
-    rate -->|Yes| guard
-    guard -->|No| err3[403 Forbidden]
-    guard -->|Yes| transform
-    transform --> sign
-    sign --> invoke
-    invoke --> count
-    count --> cost
-    cost --> headers
-    headers --> resp
-```
-
-### Model Routing by Role
-
-| Role | Route | Available Models |
-|------|-------|------------------|
-| Admin | `/v1/chat/admin` | Opus, Sonnet, Haiku, Titan |
-| Developer | `/v1/chat/developer` | Opus, Sonnet, Haiku |
-| Analyst | `/v1/chat/analyst` | Haiku, Titan |
-| Ops | `/v1/chat/ops` | Haiku |
-| Guest | `/v1/chat/guest` | Haiku |
-
-```
-                                    ┌─────────────┐
-                               ┌───▶│ Claude Opus │◀─── Admin, Developer
-                               │    └─────────────┘
-                               │
-┌──────────┐    ┌─────────┐    │    ┌──────────────┐
-│ Consumer │───▶│  Route  │────┼───▶│Claude Sonnet │◀─── Admin, Developer
-└──────────┘    └─────────┘    │    └──────────────┘
-                               │
-                               │    ┌──────────────┐
-                               ├───▶│ Claude Haiku │◀─── All Roles
-                               │    └──────────────┘
-                               │
-                               │    ┌──────────────┐
-                               └───▶│  Titan Text  │◀─── Admin, Analyst
-                                    └──────────────┘
-```
-
----
-
-## RBAC Model
-
-| Role | Rate Limit | Token Limit | Models | Use Case |
-|------|------------|-------------|--------|----------|
-| **Admin** | Unlimited | Unlimited | All | Full access, debugging |
-| **Developer** | 10 req/s | 100K/day | Opus, Sonnet, Haiku | Feature development, AI coding |
-| **Analyst** | 5 req/s | 50K/day | Haiku, Titan | Data analysis |
-| **Ops** | 3 req/s | 20K/day | Haiku | Product descriptions |
-| **Guest** | 1 req/s | 1K/day | Haiku | Limited demo access |
 
 ---
 
 ## Monitoring & Observability
 
-### Token Usage & Cost Tracking
+### Grafana Dashboards
 
-The gateway tracks every request and provides detailed metrics.
+| Dashboard | Purpose |
+|-----------|---------|
+| LLM Usage Overview | High-level usage statistics |
+| LiteLLM Usage | Detailed token tracking |
+| Infrastructure | ECS, ALB, CloudFront metrics |
 
-#### Response Headers
-
-Every response includes token usage information:
-
-```bash
-curl -v -X POST http://localhost:8000/v1/chat/developer \
-  -H "apikey: developer-key-12345" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"claude-haiku","messages":[{"role":"user","content":"Hi"}],"max_tokens":50}'
-```
-
-Response headers:
-```
-X-Token-Input: 12
-X-Token-Output: 35
-X-Token-Total: 47
-X-Token-Cost-USD: 0.000047
-X-Model-Used: anthropic.claude-3-haiku-20240307-v1:0
-X-RateLimit-Remaining: 9
-```
-
-#### Grafana Dashboard
-
-```mermaid
-flowchart TB
-    subgraph "Token Usage Dashboard"
-        direction TB
-
-        subgraph "Overview Row"
-            total_req[Total Requests<br/>📊 12,456]
-            total_tokens[Total Tokens<br/>📈 2.3M]
-            total_cost[Total Cost<br/>💰 $45.67]
-            error_rate[Error Rate<br/>⚠️ 0.12%]
-        end
-
-        subgraph "Usage by Consumer"
-            chart1[Bar Chart:<br/>Tokens per Consumer]
-        end
-
-        subgraph "Usage by Model"
-            chart2[Pie Chart:<br/>Cost Distribution]
-        end
-
-        subgraph "Time Series"
-            chart3[Line Chart:<br/>Tokens over Time]
-        end
-    end
-```
-
-Access Grafana at `http://localhost:3001` (local) or your Grafana URL (EKS).
-
-#### Prometheus Queries
+### Key Metrics
 
 ```promql
-# Total tokens used (last 24h)
-sum(increase(kong_llm_tokens_total[24h])) by (consumer)
+# Total requests
+sum(litellm_proxy_total_requests_metric_total)
 
-# Cost by model
-sum(kong_llm_cost_total) by (model)
+# Total tokens
+sum(litellm_total_tokens_metric_total) by (model)
 
-# Token usage rate
-sum(rate(kong_llm_tokens_total[5m])) by (consumer)
+# Total spend
+sum(litellm_spend_metric_total) by (user)
 
-# Top 10 consumers by usage
-topk(10, sum(increase(kong_llm_tokens_total[1h])) by (consumer))
+# Latency P95
+histogram_quantile(0.95, sum(rate(litellm_llm_api_latency_metric_bucket[5m])) by (le))
 ```
 
-#### Cost Tracking Flow
+### Cost Tracking
 
-```mermaid
-flowchart LR
-    subgraph Request
-        req[LLM Request]
-    end
-
-    subgraph "Token Meter Plugin"
-        count[Extract token<br/>counts from response]
-        price[Lookup model<br/>pricing]
-        calc[Calculate<br/>cost]
-    end
-
-    subgraph Metrics
-        prom[Prometheus<br/>kong_llm_cost_total]
-        cw[CloudWatch<br/>Custom Metric]
-    end
-
-    subgraph Alerts
-        alert[Cost threshold<br/>alerts]
-    end
-
-    req --> count --> price --> calc
-    calc --> prom --> alert
-    calc --> cw
-```
-
-**Model Pricing Reference:**
+LiteLLM automatically tracks costs based on model pricing:
 
 | Model | Input ($/1M tokens) | Output ($/1M tokens) |
 |-------|---------------------|----------------------|
-| Claude Opus | $15.00 | $75.00 |
-| Claude Sonnet | $3.00 | $15.00 |
-| Claude Haiku | $0.25 | $1.25 |
-| Titan Text | $0.30 | $0.40 |
-
----
-
-### Monitoring Rule Violations
-
-#### Violation Tracking Flow
-
-```mermaid
-flowchart TB
-    subgraph Request
-        content[Request Content]
-    end
-
-    subgraph "Guardrails Plugin"
-        scan[Pattern Scanner]
-
-        subgraph Categories
-            sql[SQL Injection]
-            pci[PCI-DSS<br/>Credit Cards]
-            creds[Credentials]
-            xss[XSS/Exploit]
-            pii[PII/GDPR]
-        end
-    end
-
-    subgraph "On Violation"
-        log[Log Event<br/>category, severity]
-        metric[Increment<br/>guardrail_blocks]
-        block[Return 403<br/>Forbidden]
-    end
-
-    subgraph Monitoring
-        grafana[Grafana<br/>Violations Dashboard]
-        datadog[Datadog<br/>Security Alerts]
-    end
-
-    content --> scan
-    scan --> sql & pci & creds & xss & pii
-    sql & pci & creds & xss & pii -->|Match| log
-    log --> metric --> block
-    metric --> grafana
-    metric --> datadog
-```
-
-#### Prometheus Queries for Violations
-
-```promql
-# Total violations by category
-sum(kong_guardrail_blocks_total) by (category)
-
-# Violation rate by consumer
-sum(rate(kong_guardrail_blocks_total[1h])) by (consumer)
-
-# Critical violations (requires immediate attention)
-sum(kong_guardrail_blocks_total{severity="critical"}) by (category)
-
-# Violations trend (for anomaly detection)
-sum(increase(kong_guardrail_blocks_total[1h]))
-```
-
-#### Grafana Violations Panel
-
-```mermaid
-flowchart TB
-    subgraph "Security Violations Dashboard"
-        direction TB
-
-        subgraph "Summary"
-            total[Total Blocks<br/>🛡️ 234]
-            critical[Critical<br/>🔴 12]
-            high[High<br/>🟠 45]
-        end
-
-        subgraph "By Category"
-            cat_chart[Stacked Bar:<br/>sql_injection: 56<br/>pci_dss: 89<br/>credentials: 34<br/>exploit: 23<br/>pii: 32]
-        end
-
-        subgraph "By Consumer"
-            consumer_chart[Table:<br/>Who triggered violations]
-        end
-
-        subgraph "Timeline"
-            timeline[Time series:<br/>Violations over time]
-        end
-    end
-```
-
-#### Log Analysis
-
-Violations are logged in JSON format for easy analysis:
-
-```json
-{
-  "event": "guardrail_violation",
-  "category": "pci_dss",
-  "severity": "critical",
-  "pattern": "%d%d%d%d[%s%-]?%d%d%d%d...",
-  "consumer": "developer-team",
-  "route": "developer-chat",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
-Query logs with:
-```bash
-# Kubernetes
-kubectl logs -n kong -l app.kubernetes.io/name=kong | \
-  jq 'select(.event == "guardrail_violation")'
-
-# Count by category
-kubectl logs -n kong -l app.kubernetes.io/name=kong | \
-  jq -r 'select(.event == "guardrail_violation") | .category' | \
-  sort | uniq -c
-```
-
----
-
-## Content Guardrails
-
-### Built-in Rules
-
-The gateway includes pre-configured rules for common security patterns:
-
-| Category | Examples | Severity |
-|----------|----------|----------|
-| **SQL Injection** | `SELECT * FROM`, `DROP TABLE` | Critical |
-| **PCI-DSS** | Credit card numbers, CVV | Critical/High |
-| **Credentials** | Passwords, API keys, tokens | High |
-| **Exploits** | `<script>`, XSS patterns | Critical |
-| **PII** | SSN, passport numbers | Critical |
-
-### Adding Custom Rules
-
-Custom rules can be added via the Kong configuration (`kong.yaml`) or dynamically through the Admin API.
-
-#### Method 1: Kong Configuration (Recommended)
-
-Edit `kong/kong.yaml` to add custom patterns:
-
-```yaml
-plugins:
-  - name: ecommerce-guardrails
-    service: bedrock-service
-    config:
-      use_default_patterns: true
-      min_severity: medium
-      block_on_violation: true
-      block_status_code: 403
-      block_message: "Request blocked by security policy"
-      # Add custom patterns as JSON array
-      custom_patterns: |
-        [
-          {
-            "pattern": "competitor%s*name",
-            "category": "business",
-            "severity": "medium"
-          },
-          {
-            "pattern": "internal%s*only",
-            "category": "confidential",
-            "severity": "high"
-          },
-          {
-            "pattern": "bitcoin|ethereum|crypto",
-            "category": "prohibited_topic",
-            "severity": "medium"
-          }
-        ]
-```
-
-#### Method 2: Per-Route Rules
-
-Apply different rules to different routes:
-
-```yaml
-# Developer route - strict rules
-- name: guardrails-developer
-  route: developer-chat
-  config:
-    min_severity: low
-    custom_patterns: |
-      [
-        {"pattern": "production%s*database", "category": "security", "severity": "critical"},
-        {"pattern": "admin%s*password", "category": "security", "severity": "critical"}
-      ]
-
-# Guest route - very strict rules
-- name: guardrails-guest
-  route: guest-chat
-  config:
-    min_severity: low
-    custom_patterns: |
-      [
-        {"pattern": "hack", "category": "prohibited", "severity": "low"},
-        {"pattern": "jailbreak", "category": "prohibited", "severity": "low"},
-        {"pattern": "ignore%s*previous", "category": "prompt_injection", "severity": "critical"}
-      ]
-```
-
-#### Pattern Syntax
-
-Patterns use Lua pattern matching (similar to regex):
-
-| Pattern | Matches |
-|---------|---------|
-| `%s` | Any whitespace |
-| `%d` | Any digit |
-| `%w` | Any alphanumeric |
-| `%a` | Any letter |
-| `.` | Any character |
-| `*` | Zero or more |
-| `+` | One or more |
-| `?` | Zero or one |
-| `[abc]` | Character class |
-| `[^abc]` | Negated class |
-
-#### Example: Block Specific Keywords
-
-```yaml
-custom_patterns: |
-  [
-    {
-      "pattern": "forbidden%s*word",
-      "category": "keyword_block",
-      "severity": "high"
-    },
-    {
-      "pattern": "competitor1|competitor2|competitor3",
-      "category": "competitor_mention",
-      "severity": "medium"
-    },
-    {
-      "pattern": "price%s*match",
-      "category": "pricing",
-      "severity": "low"
-    }
-  ]
-```
-
-#### Example: Block Prompt Injection Attempts
-
-```yaml
-custom_patterns: |
-  [
-    {
-      "pattern": "ignore%s*all%s*previous",
-      "category": "prompt_injection",
-      "severity": "critical"
-    },
-    {
-      "pattern": "disregard%s*instructions",
-      "category": "prompt_injection",
-      "severity": "critical"
-    },
-    {
-      "pattern": "you%s*are%s*now",
-      "category": "prompt_injection",
-      "severity": "high"
-    },
-    {
-      "pattern": "act%s*as%s*if",
-      "category": "prompt_injection",
-      "severity": "high"
-    },
-    {
-      "pattern": "pretend%s*you%s*are",
-      "category": "prompt_injection",
-      "severity": "high"
-    }
-  ]
-```
-
-#### Apply Configuration Changes
-
-```bash
-# Local development
-make local/reload
-
-# EKS (via ArgoCD)
-git add kong/kong.yaml
-git commit -m "feat: add custom guardrail rules"
-git push
-# ArgoCD will auto-sync
-
-# EKS (manual)
-kubectl create configmap kong-declarative-config \
-  --from-file=kong.yaml=kong/kong.yaml \
-  -n kong --dry-run=client -o yaml | kubectl apply -f -
-kubectl rollout restart deployment -n kong kong-kong
-```
-
-#### Testing Custom Rules
-
-```bash
-# Test keyword blocking
-curl -X POST http://localhost:8000/v1/chat/developer \
-  -H "apikey: developer-key-12345" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-haiku",
-    "messages": [{"role": "user", "content": "Tell me about forbidden word"}],
-    "max_tokens": 100
-  }'
-
-# Expected response:
-# HTTP 403 Forbidden
-# {"error":{"code":"GUARDRAIL_VIOLATION","category":"keyword_block","message":"Request blocked by security policy"}}
-```
+| Claude Haiku 4.5 | $0.25 | $1.25 |
+| Claude Sonnet 4.5 | $3.00 | $15.00 |
+| Claude Opus 4.5 | $15.00 | $75.00 |
 
 ---
 
@@ -699,22 +229,19 @@ curl -X POST http://localhost:8000/v1/chat/developer \
 | [High Latency Runbook](docs/runbooks/high-latency.md) | Diagnosing slow requests |
 | [Token Quota Exceeded](docs/runbooks/token-quota-exceeded.md) | Managing token usage |
 
-### Development
+### Configuration
 
 | Document | Description |
 |----------|-------------|
+| [Claude Code Config](docs/claude-code-config.md) | Setup guide for Claude Code users |
 | [API Examples](docs/examples/curl-examples.md) | curl commands for all endpoints |
-| [CLAUDE.md](.claude/CLAUDE.md) | Development conventions |
-| [status.md](.claude/status.md) | Project context and RBAC model |
 
 ### Infrastructure
 
 | Directory | Description |
 |-----------|-------------|
-| [infra/terraform](infra/terraform) | EKS, IAM, Kong Terraform modules |
-| [infra/helm](infra/helm) | Kong Helm values (base, dev, prod) |
-| [infra/argocd](infra/argocd) | ArgoCD Application manifests |
-| [infra/observability](infra/observability) | Prometheus, Grafana, Datadog configs |
+| [infra/terraform](infra/terraform) | Terraform modules and environments |
+| [infra/grafana](infra/grafana) | Grafana dashboards and provisioning |
 
 ---
 
@@ -722,57 +249,60 @@ curl -X POST http://localhost:8000/v1/chat/developer \
 
 ### Endpoints
 
-| Endpoint | Role | Models |
-|----------|------|--------|
-| `POST /v1/chat/admin` | Admin | All |
-| `POST /v1/chat/developer` | Developer | Opus, Sonnet, Haiku |
-| `POST /v1/chat/analyst` | Analyst | Haiku, Titan |
-| `POST /v1/chat/ops` | Ops | Haiku |
-| `POST /v1/chat/guest` | Guest | Haiku |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completion (OpenAI-compatible) |
+| `/v1/models` | GET | List available models |
+| `/health/liveliness` | GET | Health check |
+| `/metrics/` | GET | Prometheus metrics |
 
 ### Request Format
 
 ```json
 {
-  "model": "claude-haiku",
+  "model": "claude-haiku-4-5",
   "messages": [
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Hello!"}
   ],
   "max_tokens": 1024,
-  "temperature": 0.7,
-  "stream": false
+  "temperature": 0.7
 }
 ```
 
 ### Authentication
 
-Include API key in header:
+Include API key in Authorization header:
 ```
-apikey: your-api-key-here
+Authorization: Bearer <your-api-key>
 ```
 
-### Response Headers
+### Error Responses
 
-| Header | Description |
-|--------|-------------|
-| `X-Token-Input` | Input tokens used |
-| `X-Token-Output` | Output tokens generated |
-| `X-Token-Total` | Total tokens |
-| `X-Token-Cost-USD` | Estimated cost |
-| `X-Model-Used` | Bedrock model ID |
-| `X-RateLimit-Remaining` | Requests remaining |
-| `X-Guardrails-Enabled` | Guardrails active |
+| Code | Description |
+|------|-------------|
+| 401 | Invalid or missing API key |
+| 429 | Rate limit or budget exceeded |
+| 500 | Internal server error |
+| 502 | Bedrock service unavailable |
 
 ---
 
-## Contributing
+## Troubleshooting
 
-1. Fork the repository
-2. Create a feature branch
-3. Follow TDD methodology (write tests first)
-4. Use conventional commits
-5. Submit a pull request
+### "Unauthorized" error
+- Check that ANTHROPIC_API_KEY is set correctly
+- Verify the key is valid: `echo $ANTHROPIC_API_KEY`
+
+### "Model not found" error
+- Use one of the available model names listed above
+- Check available models: `curl -H "Authorization: Bearer $ANTHROPIC_API_KEY" $ANTHROPIC_BASE_URL/v1/models`
+
+### Connection timeout
+- Verify ANTHROPIC_BASE_URL is correct
+- Test health: `curl $ANTHROPIC_BASE_URL/health/liveliness`
+
+---
 
 ## License
 

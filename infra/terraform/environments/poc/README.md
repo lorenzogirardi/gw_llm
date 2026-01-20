@@ -1,43 +1,45 @@
-# Kong LLM Gateway - POC Environment
+# LiteLLM Gateway - POC Environment
 
-Low-cost Proof of Concept deployment using AWS managed services.
+Low-cost Proof of Concept deployment using AWS ECS Fargate.
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
-│   Clients   │     │       ECS Fargate (Kong)         │     │   AWS Bedrock   │
-│(claude-code)│────▶│  ┌────────────────────────────┐  │────▶│                 │
-│             │     │  │ Kong Gateway (DB-less)     │  │     │  - Claude Opus  │
-└─────────────┘     │  │ + Custom Plugins           │  │     │  - Claude Sonnet│
-                    │  └────────────────────────────┘  │     │  - Claude Haiku │
-                    └──────────────────────────────────┘     └─────────────────┘
+│   Clients   │     │        ECS Fargate Cluster       │     │   AWS Bedrock   │
+│(Claude Code)│────▶│  ┌────────────────────────────┐  │────▶│                 │
+│             │     │  │ LiteLLM Proxy              │  │     │  - Claude Haiku │
+└─────────────┘     │  │ (OpenAI-compatible API)    │  │     │  - Claude Sonnet│
+                    │  └────────────────────────────┘  │     │  - Claude Opus  │
+                    │  ┌────────────────────────────┐  │     └─────────────────┘
+                    │  │ Victoria Metrics           │  │
+                    │  │ (Prometheus-compatible)    │  │
+                    │  └────────────────────────────┘  │
+                    │  ┌────────────────────────────┐  │
+                    │  │ Grafana                    │  │
+                    │  │ (Dashboards)               │  │
+                    │  └────────────────────────────┘  │
+                    └──────────────────────────────────┘
                                     │
-                                    ▼
-                           ┌──────────────┐
-                           │     AMP      │
-                           │  (Prometheus)│
-                           └──────┬───────┘
-                                  │
-                                  ▼
-                           ┌──────────────┐
-                           │     AMG      │
-                           │  (Grafana)   │
-                           └──────────────┘
+                           ┌────────┴────────┐
+                           │   CloudFront    │
+                           │   (TLS + CDN)   │
+                           └─────────────────┘
 ```
 
 ## Estimated Costs
 
 | Component | Service | Monthly Cost |
 |-----------|---------|--------------|
-| Kong Gateway | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8 |
-| Metrics | Amazon Managed Prometheus (AMP) | ~$5-8 |
-| Dashboards | Amazon Managed Grafana (AMG) | ~$9 |
-| Network | NAT Gateway (single) | ~$30 |
-| **Total Fixed** | | **~$52-55** |
-| LLM Usage | Bedrock (Opus/Sonnet/Haiku) | Pay per use |
+| LiteLLM | ECS Fargate (0.5 vCPU, 1GB) | ~$15 |
+| Grafana | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8 |
+| Victoria Metrics | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8 |
+| Network | NAT Instance (t4g.nano) | ~$3 |
+| CDN | CloudFront | ~$1-5 |
+| **Total Fixed** | | **~$35-40** |
+| LLM Usage | Bedrock (Haiku/Sonnet/Opus) | Pay per use |
 
-**Note**: Actual costs depend on usage. NAT Gateway can be eliminated by using VPC endpoints.
+**Note**: Actual costs depend on usage. Much cheaper than Kong + AMP + AMG setup.
 
 ## Quick Start
 
@@ -45,7 +47,7 @@ Low-cost Proof of Concept deployment using AWS managed services.
 
 - AWS CLI configured
 - Terraform >= 1.5.0
-- AWS SSO configured (for Grafana access)
+- Docker (for building Grafana image)
 
 ### 2. Configure
 
@@ -57,6 +59,19 @@ cp terraform.tfvars.example terraform.tfvars
 vim terraform.tfvars
 ```
 
+Required secrets in AWS Secrets Manager:
+```bash
+# LiteLLM master key
+aws secretsmanager create-secret \
+  --name litellm-poc/master-key \
+  --secret-string "sk-litellm-your-master-key"
+
+# Grafana admin password
+aws secretsmanager create-secret \
+  --name kong-llm-gateway/grafana-admin-password \
+  --secret-string "your-grafana-password"
+```
+
 ### 3. Deploy
 
 ```bash
@@ -64,23 +79,43 @@ vim terraform.tfvars
 terraform init
 
 # Plan
-terraform plan
+terraform plan -out=tfplan
 
 # Apply
-terraform apply
+terraform apply tfplan
 ```
 
-### 4. Test
+### 4. Build and Push Grafana Image
+
+```bash
+cd ../../grafana
+
+# Login to ECR
+aws ecr get-login-password --region us-west-1 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-west-1.amazonaws.com
+
+# Build and push
+docker build --platform linux/amd64 -t <ACCOUNT_ID>.dkr.ecr.us-west-1.amazonaws.com/grafana-llm-gateway:latest .
+docker push <ACCOUNT_ID>.dkr.ecr.us-west-1.amazonaws.com/grafana-llm-gateway:latest
+```
+
+### 5. Test
 
 ```bash
 # Get outputs
 terraform output
 
 # Test health endpoint
-curl $(terraform output -raw kong_endpoint)/health
+curl $(terraform output -raw cloudfront_domain)/health/liveliness
+
+# Test chat completion
+curl -X POST "$(terraform output -raw cloudfront_domain)/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -d '{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'
 
 # Open Grafana
-open $(terraform output -raw grafana_url)
+open "https://$(terraform output -raw cloudfront_domain)/grafana"
 ```
 
 ## Configuration
@@ -98,30 +133,54 @@ public_subnet_ids  = ["subnet-cccc", "subnet-dddd"]
 
 ### HTTPS
 
-Provide an ACM certificate ARN:
+CloudFront provides HTTPS by default. For custom domain:
 
 ```hcl
 certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/xxxxx"
 ```
 
-### Grafana Users
+### Adding Models
 
-Add SSO user IDs for admin access:
+Edit `litellm_config` in `main.tf`:
 
-```hcl
-grafana_admin_user_ids = ["user-id-from-sso"]
+```yaml
+model_list:
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: bedrock/anthropic.claude-3-5-haiku-20241022-v1:0
+      aws_region_name: us-west-1
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0
+      aws_region_name: us-west-1
 ```
 
-## Kong Configuration
+## User Management
 
-The Kong gateway is configured in DB-less mode. To update configuration:
+### Create User
 
-1. Build a custom Docker image with your `kong.yaml`
-2. Push to ECR
-3. Update `kong_image` variable
-4. Apply Terraform
+```bash
+curl -X POST "https://<cloudfront-domain>/user/new" \
+  -H "Authorization: Bearer <MASTER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_email": "user@example.com",
+    "max_budget": 10.0,
+    "budget_duration": "monthly"
+  }'
+```
 
-Or use EFS to mount configuration dynamically (requires additional setup).
+### Generate API Key
+
+```bash
+curl -X POST "https://<cloudfront-domain>/key/generate" \
+  -H "Authorization: Bearer <MASTER_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<USER_ID>",
+    "key_alias": "user-laptop"
+  }'
+```
 
 ## Cleanup
 
@@ -129,9 +188,35 @@ Or use EFS to mount configuration dynamically (requires additional setup).
 terraform destroy
 ```
 
-## Next Steps
+## Outputs
 
-- Configure Kong `kong.yaml` with API keys and routes
-- Set up Grafana dashboards
-- Add HTTPS certificate
-- Configure alerting (SNS topics)
+| Output | Description |
+|--------|-------------|
+| `cloudfront_domain` | CloudFront distribution domain |
+| `alb_dns_name` | ALB DNS name (internal) |
+| `grafana_url` | Grafana dashboard URL |
+| `ecs_cluster_name` | ECS cluster name |
+
+## Troubleshooting
+
+### LiteLLM not responding
+```bash
+# Check ECS service
+aws ecs describe-services --cluster kong-llm-gateway-poc --services litellm --region us-west-1
+
+# Check logs
+aws logs tail /ecs/litellm --follow --region us-west-1
+```
+
+### Metrics not appearing
+```bash
+# Check Victoria Metrics is scraping
+curl "https://<cloudfront-domain>/metrics/"
+
+# Check Victoria Metrics targets
+aws logs tail /ecs/victoria-metrics --follow --region us-west-1
+```
+
+### Grafana login issues
+- Default user: `admin`
+- Password: From Secrets Manager (`kong-llm-gateway/grafana-admin-password`)

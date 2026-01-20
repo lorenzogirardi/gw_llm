@@ -1,4 +1,4 @@
-# Kong LLM Gateway - C4 Architecture
+# LiteLLM Gateway - C4 Architecture
 
 This document describes the system architecture using the C4 model (Context, Containers, Components, Code).
 
@@ -8,29 +8,21 @@ Shows the LLM Gateway in the context of its users and external systems.
 
 ```mermaid
 C4Context
-    title System Context Diagram - Kong LLM Gateway
+    title System Context Diagram - LiteLLM Gateway
 
-    Person(developer, "Developer", "AI/ML engineer using LLM APIs")
-    Person(analyst, "Analyst", "Business analyst querying data")
-    Person(ops, "Ecommerce Ops", "Operations team")
-    Person(admin, "Platform Admin", "Gateway administrator")
+    Person(developer, "Developer", "Uses Claude Code or direct API")
+    Person(admin, "Platform Admin", "Manages gateway and users")
 
-    System(kong_gateway, "Kong LLM Gateway", "API Gateway that routes, meters, and secures LLM requests")
+    System(litellm_gateway, "LiteLLM Gateway", "OpenAI-compatible API proxy with usage tracking")
 
-    System_Ext(bedrock, "AWS Bedrock", "Managed LLM service with Claude, Titan models")
+    System_Ext(bedrock, "AWS Bedrock", "Managed LLM service with Claude models")
     System_Ext(cloudwatch, "CloudWatch", "AWS monitoring and logging")
-    System_Ext(prometheus, "Prometheus", "Metrics collection")
-    System_Ext(datadog, "Datadog", "Production APM and monitoring")
 
-    Rel(developer, kong_gateway, "Uses", "HTTPS/REST")
-    Rel(analyst, kong_gateway, "Uses", "HTTPS/REST")
-    Rel(ops, kong_gateway, "Uses", "HTTPS/REST")
-    Rel(admin, kong_gateway, "Manages", "Admin API")
+    Rel(developer, litellm_gateway, "API requests", "HTTPS")
+    Rel(admin, litellm_gateway, "Manages users/keys", "Admin API")
 
-    Rel(kong_gateway, bedrock, "Proxies to", "HTTPS + SigV4")
-    Rel(kong_gateway, cloudwatch, "Sends metrics", "AWS SDK")
-    Rel(kong_gateway, prometheus, "Exposes metrics", "/metrics")
-    Rel(kong_gateway, datadog, "Sends telemetry", "DogStatsD")
+    Rel(litellm_gateway, bedrock, "InvokeModel", "HTTPS + SigV4")
+    Rel(litellm_gateway, cloudwatch, "Logs", "AWS SDK")
 ```
 
 ## Level 2: Container Diagram
@@ -39,127 +31,107 @@ Shows the containers that make up the LLM Gateway system.
 
 ```mermaid
 C4Container
-    title Container Diagram - Kong LLM Gateway
+    title Container Diagram - LiteLLM Gateway
 
     Person(user, "API Consumer", "Application using LLM APIs")
 
-    Container_Boundary(eks, "EKS Cluster") {
-        Container(kong, "Kong Gateway", "Kong OSS 3.6", "API Gateway with custom plugins for Bedrock routing")
-        Container(config, "ConfigMap", "Kubernetes", "Declarative Kong configuration")
-        Container(plugins, "Custom Plugins", "Lua", "bedrock-proxy, token-meter, guardrails")
+    Container_Boundary(aws, "AWS Cloud") {
+        Container_Boundary(vpc, "VPC") {
+            Container(cloudfront, "CloudFront", "CDN", "TLS termination, caching")
+            Container(alb, "Application LB", "AWS ALB", "Load balancing, routing")
+
+            Container_Boundary(ecs, "ECS Cluster") {
+                Container(litellm, "LiteLLM Proxy", "Python/FastAPI", "OpenAI-compatible API, model routing")
+                Container(grafana, "Grafana", "Grafana 11", "Dashboards and visualization")
+                Container(victoria, "Victoria Metrics", "VictoriaMetrics", "Metrics storage (Prometheus-compatible)")
+            }
+        }
+
+        ContainerDb(bedrock_claude, "Claude Models", "Bedrock", "Haiku, Sonnet, Opus")
+        Container(secrets, "Secrets Manager", "AWS", "API keys, master key")
     }
 
-    Container_Boundary(aws, "AWS Services") {
-        ContainerDb(bedrock_claude, "Claude Models", "Bedrock", "Opus, Sonnet, Haiku")
-        ContainerDb(bedrock_titan, "Titan Models", "Bedrock", "Text generation")
-        Container(iam, "IAM/IRSA", "AWS IAM", "Service account credentials")
-        ContainerDb(cloudwatch, "CloudWatch", "AWS", "Logs and metrics")
-    }
-
-    Container_Boundary(observability, "Observability Stack") {
-        Container(prometheus, "Prometheus", "TSDB", "Metrics collection")
-        Container(grafana, "Grafana", "Dashboards", "Visualization (local)")
-        Container(datadog, "Datadog", "SaaS", "Monitoring & Alerting (prod)")
-    }
-
-    Rel(user, kong, "Sends requests", "HTTPS")
-    Rel(kong, config, "Reads", "Volume mount")
-    Rel(kong, plugins, "Executes", "Lua PDK")
-    Rel(kong, bedrock_claude, "InvokeModel", "HTTPS/SigV4")
-    Rel(kong, bedrock_titan, "InvokeModel", "HTTPS/SigV4")
-    Rel(kong, iam, "AssumeRole", "IRSA")
-    Rel(kong, cloudwatch, "PutMetricData", "AWS SDK")
-    Rel(kong, prometheus, "Scrapes", "/metrics")
-    Rel(prometheus, datadog, "Remote write", "HTTPS")
-    Rel(grafana, prometheus, "Queries", "PromQL")
+    Rel(user, cloudfront, "HTTPS", "443")
+    Rel(cloudfront, alb, "HTTP", "80")
+    Rel(alb, litellm, "HTTP", "/v1/*")
+    Rel(alb, grafana, "HTTP", "/grafana/*")
+    Rel(litellm, bedrock_claude, "InvokeModel", "HTTPS/SigV4")
+    Rel(litellm, secrets, "GetSecret", "AWS SDK")
+    Rel(victoria, litellm, "Scrapes", "/metrics/")
+    Rel(grafana, victoria, "Queries", "PromQL")
 ```
 
 ## Level 3: Component Diagram
 
-Shows the components within Kong Gateway.
+Shows the components within LiteLLM Gateway.
 
 ```mermaid
 C4Component
-    title Component Diagram - Kong Gateway Plugins
+    title Component Diagram - LiteLLM Proxy
 
-    Container_Boundary(kong, "Kong Gateway") {
-        Component(proxy, "Proxy", "nginx", "Core request routing")
-        Component(auth, "Key Auth", "Plugin", "API key validation")
-        Component(ratelimit, "Rate Limiting", "Plugin", "Request/token limits")
-        Component(transform, "Request Transformer", "Plugin", "Header manipulation")
-        Component(prometheus_plugin, "Prometheus", "Plugin", "Metrics export")
-
-        Container_Boundary(custom, "Custom Plugins") {
-            Component(bedrock_proxy, "Bedrock Proxy", "Lua", "Routes requests to Bedrock, SigV4 signing")
-            Component(token_meter, "Token Meter", "Lua", "Counts tokens, tracks costs")
-            Component(guardrails, "Guardrails", "Lua", "PCI/GDPR compliance, content filtering")
-        }
+    Container_Boundary(litellm, "LiteLLM Proxy") {
+        Component(api, "OpenAI API", "FastAPI", "OpenAI-compatible endpoints")
+        Component(router, "Model Router", "Python", "Routes to configured models")
+        Component(auth, "Authentication", "Python", "API key validation")
+        Component(budget, "Budget Manager", "Python", "User budgets and limits")
+        Component(prometheus, "Prometheus Callback", "Python", "Metrics export")
     }
 
     System_Ext(bedrock, "AWS Bedrock", "LLM APIs")
     System_Ext(consumer, "API Consumer", "Client application")
 
-    Rel(consumer, auth, "API Key", "Header")
-    Rel(auth, ratelimit, "Validated", "Internal")
-    Rel(ratelimit, guardrails, "Rate OK", "Internal")
-    Rel(guardrails, transform, "Content OK", "Internal")
-    Rel(transform, bedrock_proxy, "Transformed", "Internal")
-    Rel(bedrock_proxy, bedrock, "InvokeModel", "HTTPS")
-    Rel(bedrock, bedrock_proxy, "Response", "JSON")
-    Rel(bedrock_proxy, token_meter, "Response", "Internal")
-    Rel(token_meter, prometheus_plugin, "Metrics", "Internal")
-    Rel(token_meter, consumer, "Response", "HTTPS")
+    Rel(consumer, api, "POST /v1/chat/completions", "HTTPS")
+    Rel(api, auth, "Validate key", "Internal")
+    Rel(auth, budget, "Check budget", "Internal")
+    Rel(budget, router, "Route request", "Internal")
+    Rel(router, bedrock, "InvokeModel", "HTTPS")
+    Rel(bedrock, router, "Response", "JSON")
+    Rel(router, prometheus, "Record metrics", "Internal")
+    Rel(prometheus, consumer, "Response", "HTTPS")
 ```
 
-## Level 4: Code Diagram (Sequence)
+## Level 4: Sequence Diagram
 
 Shows the request flow through the system.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client
-    participant Kong
-    participant KeyAuth
-    participant RateLimit
-    participant Guardrails
-    participant BedrockProxy
-    participant TokenMeter
-    participant Bedrock
-    participant CloudWatch
+    participant Client as Claude Code
+    participant CF as CloudFront
+    participant ALB as ALB
+    participant LiteLLM as LiteLLM Proxy
+    participant Bedrock as AWS Bedrock
+    participant VM as Victoria Metrics
 
-    Client->>Kong: POST /v1/chat/developer
-    Kong->>KeyAuth: Validate API Key
-    KeyAuth-->>Kong: Consumer: developer-team
+    Client->>CF: POST /v1/chat/completions
+    CF->>ALB: Forward request
+    ALB->>LiteLLM: Route to LiteLLM
 
-    Kong->>RateLimit: Check rate limits
-    RateLimit-->>Kong: Within limits
+    LiteLLM->>LiteLLM: Validate API Key
 
-    Kong->>Guardrails: Scan request content
-    Note over Guardrails: Check for PII, SQL injection,<br/>credit card numbers
-
-    alt Content blocked
-        Guardrails-->>Client: 403 Forbidden
-    else Content OK
-        Guardrails-->>Kong: Content validated
+    alt Invalid Key
+        LiteLLM-->>Client: 401 Unauthorized
+    else Valid Key
+        LiteLLM->>LiteLLM: Check user budget
     end
 
-    Kong->>BedrockProxy: Route to Bedrock
-    Note over BedrockProxy: Transform OpenAI format<br/>to Bedrock format
+    alt Budget exceeded
+        LiteLLM-->>Client: 429 Budget Exceeded
+    else Budget OK
+        LiteLLM->>LiteLLM: Select model (claude-haiku-4-5)
+    end
 
-    BedrockProxy->>BedrockProxy: Select model (Claude Sonnet)
-    BedrockProxy->>BedrockProxy: Sign request (SigV4)
+    LiteLLM->>Bedrock: InvokeModel (SigV4 signed)
+    Bedrock-->>LiteLLM: Response + token usage
 
-    BedrockProxy->>Bedrock: InvokeModel
-    Bedrock-->>BedrockProxy: Response + token usage
+    LiteLLM->>LiteLLM: Record metrics
+    Note over LiteLLM: tokens, latency, cost
 
-    BedrockProxy->>TokenMeter: Process response
-    Note over TokenMeter: Extract token counts<br/>Calculate costs
+    LiteLLM-->>Client: 200 OK + response
 
-    TokenMeter->>CloudWatch: PutMetricData (async)
-
-    TokenMeter-->>Kong: Add usage headers
-    Kong-->>Client: 200 OK + X-Token-Usage headers
+    VM->>LiteLLM: Scrape /metrics/
+    LiteLLM-->>VM: Prometheus metrics
 ```
 
 ## Deployment Diagram
@@ -169,53 +141,50 @@ Shows how components are deployed in AWS.
 ```mermaid
 flowchart TB
     subgraph Internet
-        client[API Clients]
+        client[API Clients<br/>Claude Code]
     end
 
-    subgraph AWS["AWS Region (us-east-1)"]
-        subgraph VPC["VPC 10.0.0.0/16"]
+    subgraph AWS["AWS Region (us-west-1)"]
+        cf[CloudFront Distribution]
+
+        subgraph VPC["VPC 10.10.0.0/16"]
             subgraph public["Public Subnets"]
-                nlb[Network Load Balancer]
+                alb[Application Load Balancer]
+                nat[NAT Instance]
             end
 
             subgraph private["Private Subnets"]
-                subgraph EKS["EKS Cluster"]
-                    subgraph kong_ns["Namespace: kong"]
-                        kong1[Kong Pod 1]
-                        kong2[Kong Pod 2]
-                        kong3[Kong Pod 3]
-                    end
-
-                    subgraph monitoring["Namespace: monitoring"]
-                        prometheus[Prometheus]
-                        grafana[Grafana]
-                    end
+                subgraph ECS["ECS Cluster (Fargate)"]
+                    litellm[LiteLLM Service<br/>0.5 vCPU, 1GB]
+                    grafana[Grafana Service<br/>0.25 vCPU, 0.5GB]
+                    victoria[Victoria Metrics<br/>0.25 vCPU, 0.5GB]
                 end
             end
         end
 
         subgraph bedrock["Bedrock Service"]
-            claude[Claude Models]
-            titan[Titan Models]
+            haiku[Claude Haiku 4.5]
+            sonnet[Claude Sonnet 4.5]
+            opus[Claude Opus 4.5]
         end
 
-        subgraph iam["IAM"]
-            role[Kong Bedrock Role]
-            oidc[OIDC Provider]
-        end
-
-        cloudwatch[CloudWatch]
+        secrets[Secrets Manager]
+        ecr[ECR Repositories]
     end
 
-    client --> nlb
-    nlb --> kong1 & kong2 & kong3
-    kong1 & kong2 & kong3 --> bedrock
-    kong1 & kong2 & kong3 --> cloudwatch
-    kong1 & kong2 & kong3 -.-> oidc
-    oidc -.-> role
-    role -.-> bedrock
-    prometheus --> kong1 & kong2 & kong3
-    grafana --> prometheus
+    client --> cf
+    cf --> alb
+    alb --> litellm
+    alb --> grafana
+    litellm --> nat
+    nat --> bedrock
+    litellm -.-> secrets
+    victoria --> litellm
+    grafana --> victoria
+
+    style haiku fill:#90EE90
+    style sonnet fill:#FFD700
+    style opus fill:#FF6B6B
 ```
 
 ## Data Flow Diagram
@@ -224,104 +193,101 @@ Shows how data flows through the system with security boundaries.
 
 ```mermaid
 flowchart LR
-    subgraph External["External (Untrusted)"]
+    subgraph External["External (Internet)"]
         client[API Client]
     end
 
-    subgraph DMZ["DMZ"]
-        nlb[NLB]
+    subgraph Edge["Edge (CloudFront)"]
+        cf[CDN + TLS]
     end
 
-    subgraph Internal["Internal (Trusted)"]
-        subgraph kong["Kong Gateway"]
-            auth[Authentication]
-            guard[Guardrails]
-            proxy[Bedrock Proxy]
-            meter[Token Meter]
+    subgraph DMZ["DMZ (Public Subnet)"]
+        alb[ALB]
+    end
+
+    subgraph Internal["Internal (Private Subnet)"]
+        subgraph litellm["LiteLLM"]
+            auth[Auth]
+            budget[Budget]
+            proxy[Model Proxy]
         end
+        metrics[Victoria Metrics]
     end
 
     subgraph AWS["AWS Services"]
         bedrock[Bedrock API]
-        cw[CloudWatch]
+        sm[Secrets Manager]
     end
 
-    client -->|1. HTTPS Request| nlb
-    nlb -->|2. Forward| auth
-    auth -->|3. Validate Key| guard
-    guard -->|4. Scan Content| proxy
-    proxy -->|5. SigV4 Request| bedrock
-    bedrock -->|6. LLM Response| proxy
-    proxy -->|7. Process| meter
-    meter -->|8. Log Metrics| cw
-    meter -->|9. Response| client
+    client -->|1. HTTPS| cf
+    cf -->|2. HTTP| alb
+    alb -->|3. Route| auth
+    auth -->|4. Validate| budget
+    budget -->|5. Check| proxy
+    proxy -->|6. SigV4| bedrock
+    bedrock -->|7. Response| proxy
+    proxy -->|8. Metrics| metrics
+    proxy -->|9. Response| client
 
     style External fill:#ffcccc
-    style DMZ fill:#ffffcc
+    style Edge fill:#ffffcc
+    style DMZ fill:#ffe4b5
     style Internal fill:#ccffcc
     style AWS fill:#ccccff
 ```
 
-## RBAC Model
+## User Budget Model
 
-Shows the role-based access control structure.
+Shows how user budgets and limits work.
 
 ```mermaid
 flowchart TB
-    subgraph Consumers["API Consumers"]
-        admin[Admin]
-        developer[Developer]
-        analyst[Analyst]
-        ops[Ecommerce Ops]
-        guest[Guest]
+    subgraph Users["LiteLLM Users"]
+        admin[Admin User<br/>Unlimited]
+        dev[Developer User<br/>$10/month]
+        test[Test User<br/>$1/month]
     end
 
     subgraph Models["Available Models"]
-        opus[Claude Opus 4]
-        sonnet[Claude Sonnet 4]
-        haiku[Claude Haiku]
-        titan[Titan Text]
+        haiku[Claude Haiku 4.5<br/>$0.25/$1.25 per 1M]
+        sonnet[Claude Sonnet 4.5<br/>$3/$15 per 1M]
+        opus[Claude Opus 4.5<br/>$15/$75 per 1M]
     end
 
-    subgraph Limits["Rate Limits"]
-        admin_limit[Unlimited]
-        dev_limit[10 req/s<br/>100K tokens/day]
-        analyst_limit[5 req/s<br/>50K tokens/day]
-        ops_limit[3 req/s<br/>20K tokens/day]
-        guest_limit[1 req/s<br/>1K tokens/day]
+    subgraph Tracking["Usage Tracking"]
+        tokens[Token Counter]
+        spend[Spend Calculator]
+        budget[Budget Enforcer]
     end
 
-    admin --> opus & sonnet & haiku & titan
-    admin --> admin_limit
+    admin --> haiku & sonnet & opus
+    dev --> haiku & sonnet
+    test --> haiku
 
-    developer --> opus & sonnet & haiku
-    developer --> dev_limit
+    haiku & sonnet & opus --> tokens
+    tokens --> spend
+    spend --> budget
 
-    analyst --> haiku & titan
-    analyst --> analyst_limit
-
-    ops --> haiku
-    ops --> ops_limit
-
-    guest --> haiku
-    guest --> guest_limit
+    budget -->|Exceeded| block[429 Budget Exceeded]
+    budget -->|OK| allow[Process Request]
 
     style admin fill:#ff9999
-    style developer fill:#99ff99
-    style analyst fill:#9999ff
-    style ops fill:#ffff99
-    style guest fill:#cccccc
+    style dev fill:#99ff99
+    style test fill:#9999ff
+    style block fill:#ffcccc
+    style allow fill:#ccffcc
 ```
 
 ## Technology Stack
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| API Gateway | Kong OSS 3.6 | Request routing, authentication, rate limiting |
-| Plugins | Lua (Kong PDK) | Custom logic for Bedrock integration |
-| Container | Docker / EKS | Containerized deployment |
-| Infrastructure | Terraform | Infrastructure as Code |
-| GitOps | ArgoCD | Kubernetes deployment automation |
-| Monitoring | Prometheus + Grafana | Metrics and dashboards |
-| APM | Datadog | Production monitoring |
-| Cloud | AWS (EKS, Bedrock, IAM) | Managed services |
+| CDN | CloudFront | TLS termination, edge caching |
+| Load Balancer | ALB | Request routing, health checks |
+| API Proxy | LiteLLM | OpenAI-compatible API, model routing |
+| Compute | ECS Fargate | Serverless containers |
+| Metrics | Victoria Metrics | Prometheus-compatible TSDB |
+| Dashboards | Grafana | Visualization and alerting |
+| LLM Backend | AWS Bedrock | Claude model hosting |
+| Secrets | Secrets Manager | API keys, credentials |
+| IaC | Terraform | Infrastructure as Code |

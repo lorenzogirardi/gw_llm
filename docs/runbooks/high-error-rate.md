@@ -1,121 +1,115 @@
 # Runbook: High Error Rate
 
-## Alert: KongHighErrorRate / KongCriticalErrorRate
+## Alert: LiteLLMHighErrorRate
 
 **Severity**: Warning (>5%) / Critical (>10%)
 
-**Description**: The Kong LLM Gateway is returning an elevated rate of 5xx errors.
+**Description**: The LiteLLM Gateway is returning an elevated rate of 5xx errors.
 
 ## Quick Actions
 
-1. Check Kong pod status:
+1. Check LiteLLM service status:
    ```bash
-   kubectl get pods -n kong -l app.kubernetes.io/name=kong
+   aws ecs describe-services \
+     --cluster kong-llm-gateway-poc \
+     --services litellm \
+     --region us-west-1
    ```
 
 2. Check recent logs:
    ```bash
-   kubectl logs -n kong -l app.kubernetes.io/name=kong --tail=100 | grep -i error
+   aws logs tail /ecs/litellm --since 10m --region us-west-1 | grep -i error
    ```
 
 3. Check Bedrock service status:
    ```bash
-   aws bedrock list-foundation-models --region us-east-1
+   aws bedrock list-foundation-models --region us-west-1
    ```
 
 ## Investigation Steps
 
 ### 1. Identify Error Pattern
 
-Check Prometheus for error breakdown:
+Check Victoria Metrics for error breakdown:
 ```promql
-sum(rate(kong_http_requests_total{code=~"5.."}[5m])) by (code, service, route)
+sum(rate(litellm_proxy_total_requests_metric_total{status_code=~"5.."}[5m])) by (status_code, model)
 ```
 
 Common error codes:
-- **500**: Internal server error (check Kong logs)
+- **500**: Internal server error (check LiteLLM logs)
 - **502**: Bad gateway (Bedrock unreachable)
-- **503**: Service unavailable (rate limiting or overload)
+- **503**: Service unavailable (ECS task unhealthy)
 - **504**: Gateway timeout (Bedrock slow response)
 
 ### 2. Check Bedrock Connectivity
 
 ```bash
-# Test Bedrock API from Kong pod
-kubectl exec -n kong -it $(kubectl get pod -n kong -l app.kubernetes.io/name=kong -o jsonpath='{.items[0].metadata.name}') -- \
-  curl -v https://bedrock-runtime.us-east-1.amazonaws.com/
+# Test Bedrock API
+aws bedrock-runtime invoke-model \
+  --model-id anthropic.claude-3-5-haiku-20241022-v1:0 \
+  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":10,"messages":[{"role":"user","content":"Hi"}]}' \
+  --region us-west-1 \
+  output.json
 ```
 
-### 3. Verify IRSA Configuration
+### 3. Check ECS Task Health
 
 ```bash
-# Check service account annotation
-kubectl get sa -n kong kong -o yaml | grep eks.amazonaws.com
+# List running tasks
+aws ecs list-tasks \
+  --cluster kong-llm-gateway-poc \
+  --service-name litellm \
+  --region us-west-1
 
-# Verify IAM role trust policy
-aws iam get-role --role-name kong-llm-gateway-dev-kong-bedrock
-```
-
-### 4. Check Resource Utilization
-
-```bash
-# Pod resources
-kubectl top pods -n kong
-
-# Node resources
-kubectl top nodes
-```
-
-### 5. Review Recent Changes
-
-```bash
-# Check ArgoCD sync history
-argocd app history kong-llm-gateway-dev
-
-# Check ConfigMap changes
-kubectl get configmap -n kong kong-declarative-config -o yaml
+# Describe task
+aws ecs describe-tasks \
+  --cluster kong-llm-gateway-poc \
+  --tasks <TASK_ARN> \
+  --region us-west-1
 ```
 
 ## Remediation
 
-### Bedrock API Issues
+### LiteLLM Service Issues
 
-1. Check AWS Service Health Dashboard
-2. Verify model availability in the region
-3. Check IAM permissions for InvokeModel
-
-### Kong Pod Issues
-
-1. Restart affected pods:
+1. Force new deployment:
    ```bash
-   kubectl rollout restart deployment -n kong kong-kong
+   aws ecs update-service \
+     --cluster kong-llm-gateway-poc \
+     --service litellm \
+     --force-new-deployment \
+     --region us-west-1
    ```
 
 2. Scale up if under load:
    ```bash
-   kubectl scale deployment -n kong kong-kong --replicas=5
+   aws ecs update-service \
+     --cluster kong-llm-gateway-poc \
+     --service litellm \
+     --desired-count 2 \
+     --region us-west-1
    ```
 
 ### Configuration Issues
 
-1. Validate Kong configuration:
+1. Check LiteLLM config in Terraform:
    ```bash
-   kubectl exec -n kong -it $(kubectl get pod -n kong -l app.kubernetes.io/name=kong -o jsonpath='{.items[0].metadata.name}') -- \
-     kong config parse /kong_dbless/kong.yaml
+   cd infra/terraform/environments/poc
+   grep -A50 "litellm_config" main.tf
    ```
 
-2. Check for recent config changes and rollback if needed
+2. Apply config changes:
+   ```bash
+   terraform plan -out=tfplan
+   terraform apply tfplan
+   ```
 
 ## Escalation
 
-If the issue persists after following this runbook:
-
-1. **Slack**: #kong-alerts
-2. **PagerDuty**: Platform On-Call
-3. **AWS Support**: Open case for Bedrock service issues
+1. **Slack**: #platform-alerts
+2. **AWS Support**: Open case for Bedrock service issues
 
 ## Related Links
 
-- [Grafana Dashboard](http://grafana:3000/d/kong-llm-gateway)
-- [Kong Error Codes](https://docs.konghq.com/gateway/latest/production/troubleshooting/error-codes/)
+- [Grafana Dashboard](https://d18l8nt8fin3hz.cloudfront.net/grafana)
 - [AWS Bedrock Status](https://health.aws.amazon.com/)

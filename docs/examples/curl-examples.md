@@ -1,93 +1,31 @@
-# Kong LLM Gateway - API Examples
+# LiteLLM Gateway - API Examples
 
-This document provides curl examples for testing the Kong LLM Gateway.
+This document provides curl examples for testing the LiteLLM Gateway.
 
 ## Prerequisites
 
 Set your environment variables:
 ```bash
-# Local development
-export KONG_URL="http://localhost:8000"
+# Gateway URL
+export LITELLM_URL="https://d18l8nt8fin3hz.cloudfront.net"
 
-# EKS deployment
-export KONG_URL="https://your-nlb-endpoint.amazonaws.com"
+# Your API Key (get from admin)
+export LITELLM_API_KEY="sk-your-api-key"
 
-# API Keys (from kong.yaml)
-export ADMIN_KEY="admin-key-super-secret"
-export DEVELOPER_KEY="developer-key-12345"
-export ANALYST_KEY="analyst-key-67890"
-export OPS_KEY="ops-key-ecommerce"
-export GUEST_KEY="guest-key-limited"
+# Admin only - Master Key
+export LITELLM_MASTER_KEY="sk-litellm-master-key"
 ```
 
 ## Basic Chat Completion
 
-### Developer Role (Claude Sonnet)
+### Simple Request
 
 ```bash
-curl -X POST "${KONG_URL}/v1/chat/developer" \
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
   -d '{
-    "model": "claude-sonnet",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Write a Python function to calculate fibonacci numbers"
-      }
-    ],
-    "max_tokens": 1024
-  }'
-```
-
-### Analyst Role (Claude Haiku)
-
-```bash
-curl -X POST "${KONG_URL}/v1/chat/analyst" \
-  -H "Content-Type: application/json" \
-  -H "apikey: ${ANALYST_KEY}" \
-  -d '{
-    "model": "claude-haiku",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Analyze this sales data: Q1: $1M, Q2: $1.2M, Q3: $0.9M, Q4: $1.5M"
-      }
-    ],
-    "max_tokens": 512
-  }'
-```
-
-### Ecommerce Ops Role
-
-```bash
-curl -X POST "${KONG_URL}/v1/chat/ops" \
-  -H "Content-Type: application/json" \
-  -H "apikey: ${OPS_KEY}" \
-  -d '{
-    "model": "claude-haiku",
-    "messages": [
-      {
-        "role": "system",
-        "content": "You are an ecommerce assistant helping with product descriptions."
-      },
-      {
-        "role": "user",
-        "content": "Write a product description for a wireless bluetooth headphone"
-      }
-    ],
-    "max_tokens": 256
-  }'
-```
-
-### Guest Role (Limited)
-
-```bash
-curl -X POST "${KONG_URL}/v1/chat/guest" \
-  -H "Content-Type: application/json" \
-  -H "apikey: ${GUEST_KEY}" \
-  -d '{
-    "model": "claude-haiku",
+    "model": "claude-haiku-4-5",
     "messages": [
       {
         "role": "user",
@@ -98,40 +36,56 @@ curl -X POST "${KONG_URL}/v1/chat/guest" \
   }'
 ```
 
-## Admin Operations
-
-### Full Model Access (Claude Opus)
+### With System Prompt
 
 ```bash
-curl -X POST "${KONG_URL}/v1/chat/admin" \
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: ${ADMIN_KEY}" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
   -d '{
-    "model": "claude-opus",
+    "model": "claude-haiku-4-5",
     "messages": [
       {
         "role": "system",
-        "content": "You are a senior software architect."
+        "content": "You are a helpful coding assistant."
       },
       {
         "role": "user",
-        "content": "Design a microservices architecture for an ecommerce platform"
+        "content": "Write a Python function to calculate fibonacci numbers"
       }
     ],
-    "max_tokens": 4096,
-    "temperature": 0.7
+    "max_tokens": 1024
+  }'
+```
+
+### With Temperature Control
+
+```bash
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
+  -d '{
+    "model": "claude-haiku-4-5",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Write a creative story about a robot"
+      }
+    ],
+    "max_tokens": 500,
+    "temperature": 0.9
   }'
 ```
 
 ## Streaming Responses
 
 ```bash
-curl -X POST "${KONG_URL}/v1/chat/developer" \
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
   -H "Accept: text/event-stream" \
   -d '{
-    "model": "claude-sonnet",
+    "model": "claude-haiku-4-5",
     "messages": [
       {
         "role": "user",
@@ -143,73 +97,107 @@ curl -X POST "${KONG_URL}/v1/chat/developer" \
   }'
 ```
 
-## Token Usage Information
+## List Available Models
 
-Response headers include token usage:
 ```bash
-curl -v -X POST "${KONG_URL}/v1/chat/developer" \
-  -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
-  -d '{
-    "model": "claude-haiku",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "max_tokens": 100
-  }' 2>&1 | grep -i "x-"
+curl "${LITELLM_URL}/v1/models" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}"
+```
 
-# Expected headers:
-# X-Token-Input: 5
-# X-Token-Output: 12
-# X-Token-Total: 17
-# X-Token-Cost-USD: 0.000017
-# X-Model-Used: anthropic.claude-3-haiku-20240307-v1:0
+## Health Check
+
+```bash
+# Liveliness check
+curl "${LITELLM_URL}/health/liveliness"
+
+# Readiness check
+curl "${LITELLM_URL}/health/readiness"
+
+# Full health check
+curl "${LITELLM_URL}/health"
+```
+
+## Metrics (Prometheus Format)
+
+```bash
+curl "${LITELLM_URL}/metrics/"
+```
+
+## Admin Operations (Master Key Required)
+
+### Create User
+
+```bash
+curl -X POST "${LITELLM_URL}/user/new" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+  -d '{
+    "user_email": "developer@example.com",
+    "max_budget": 10.0,
+    "budget_duration": "monthly"
+  }'
+```
+
+### Generate API Key for User
+
+```bash
+curl -X POST "${LITELLM_URL}/key/generate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+  -d '{
+    "user_id": "<USER_ID_FROM_ABOVE>",
+    "key_alias": "developer-laptop",
+    "duration": "30d"
+  }'
+```
+
+### List All Keys
+
+```bash
+curl "${LITELLM_URL}/key/list" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
+```
+
+### Delete Key
+
+```bash
+curl -X POST "${LITELLM_URL}/key/delete" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+  -d '{
+    "keys": ["sk-key-to-delete"]
+  }'
+```
+
+### Get User Info
+
+```bash
+curl "${LITELLM_URL}/user/info?user_id=<USER_ID>" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
+```
+
+### Update User Budget
+
+```bash
+curl -X POST "${LITELLM_URL}/user/update" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+  -d '{
+    "user_id": "<USER_ID>",
+    "max_budget": 50.0
+  }'
 ```
 
 ## Error Handling Examples
 
-### Rate Limit Exceeded (429)
-
-```bash
-# Send many requests quickly
-for i in {1..20}; do
-  curl -s -o /dev/null -w "%{http_code}\n" \
-    -X POST "${KONG_URL}/v1/chat/guest" \
-    -H "Content-Type: application/json" \
-    -H "apikey: ${GUEST_KEY}" \
-    -d '{"model": "claude-haiku", "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 10}'
-done
-
-# Expected: 429 Too Many Requests after limit reached
-```
-
-### Guardrail Block (403)
-
-```bash
-# Attempt to send sensitive data (will be blocked)
-curl -X POST "${KONG_URL}/v1/chat/developer" \
-  -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
-  -d '{
-    "model": "claude-sonnet",
-    "messages": [
-      {
-        "role": "user",
-        "content": "My credit card number is 4111-1111-1111-1111"
-      }
-    ],
-    "max_tokens": 100
-  }'
-
-# Expected: 403 Forbidden with guardrail message
-```
-
 ### Unauthorized (401)
 
 ```bash
-curl -X POST "${KONG_URL}/v1/chat/developer" \
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: invalid-key" \
+  -H "Authorization: Bearer invalid-key" \
   -d '{
-    "model": "claude-sonnet",
+    "model": "claude-haiku-4-5",
     "messages": [{"role": "user", "content": "Hello"}],
     "max_tokens": 100
   }'
@@ -217,36 +205,35 @@ curl -X POST "${KONG_URL}/v1/chat/developer" \
 # Expected: 401 Unauthorized
 ```
 
-### Model Not Allowed (403)
+### Budget Exceeded (429)
+
+When a user exceeds their budget, they receive:
+```json
+{
+  "error": {
+    "message": "Budget exceeded for user",
+    "type": "budget_exceeded",
+    "code": 429
+  }
+}
+```
+
+### Model Not Found
 
 ```bash
-# Guest trying to use Opus (not allowed)
-curl -X POST "${KONG_URL}/v1/chat/guest" \
+curl -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: ${GUEST_KEY}" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
   -d '{
-    "model": "claude-opus",
+    "model": "non-existent-model",
     "messages": [{"role": "user", "content": "Hello"}],
     "max_tokens": 100
   }'
 
-# Expected: 403 Forbidden - model not available for role
+# Expected: Model not found error
 ```
 
-## Health Check
-
-```bash
-# Kong status
-curl "${KONG_URL}/status"
-
-# Kong readiness
-curl "${KONG_URL}/status/ready"
-
-# Metrics (Prometheus format)
-curl "${KONG_URL}:8100/metrics"
-```
-
-## Batch Requests Script
+## Batch Testing Script
 
 ```bash
 #!/bin/bash
@@ -254,17 +241,17 @@ curl "${KONG_URL}:8100/metrics"
 
 MESSAGES=(
   "What is 2+2?"
-  "Explain REST APIs"
-  "Write a hello world in Python"
+  "Explain REST APIs in one sentence"
+  "Write hello world in Python"
 )
 
 for msg in "${MESSAGES[@]}"; do
   echo "Sending: $msg"
-  curl -s -X POST "${KONG_URL}/v1/chat/developer" \
+  curl -s -X POST "${LITELLM_URL}/v1/chat/completions" \
     -H "Content-Type: application/json" \
-    -H "apikey: ${DEVELOPER_KEY}" \
+    -H "Authorization: Bearer ${LITELLM_API_KEY}" \
     -d "{
-      \"model\": \"claude-haiku\",
+      \"model\": \"claude-haiku-4-5\",
       \"messages\": [{\"role\": \"user\", \"content\": \"$msg\"}],
       \"max_tokens\": 100
     }" | jq -r '.choices[0].message.content' | head -c 100
@@ -276,34 +263,57 @@ done
 
 ```bash
 # Using hey (HTTP load generator)
+# Install: brew install hey
+
 hey -n 100 -c 10 -m POST \
   -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
-  -d '{"model":"claude-haiku","messages":[{"role":"user","content":"Hello"}],"max_tokens":10}' \
-  "${KONG_URL}/v1/chat/developer"
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
+  -d '{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"Hello"}],"max_tokens":10}' \
+  "${LITELLM_URL}/v1/chat/completions"
 ```
 
 ## Troubleshooting
 
-### Enable Debug Headers
+### Enable Verbose Output
 
 ```bash
-curl -v -X POST "${KONG_URL}/v1/chat/developer" \
+curl -v -X POST "${LITELLM_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "apikey: ${DEVELOPER_KEY}" \
-  -H "X-Debug: true" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
   -d '{
-    "model": "claude-haiku",
+    "model": "claude-haiku-4-5",
     "messages": [{"role": "user", "content": "Debug test"}],
     "max_tokens": 50
-  }' 2>&1 | grep -E "(< |> |X-)"
+  }' 2>&1 | grep -E "(< |> |HTTP)"
 ```
 
-### Check Consumer Identity
+### Check Response Headers
 
 ```bash
-curl -I "${KONG_URL}/v1/chat/developer" \
-  -H "apikey: ${DEVELOPER_KEY}" 2>&1 | grep -i "x-consumer"
+curl -I -X POST "${LITELLM_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${LITELLM_API_KEY}" \
+  -d '{
+    "model": "claude-haiku-4-5",
+    "messages": [{"role": "user", "content": "Hi"}],
+    "max_tokens": 10
+  }'
+```
 
-# Expected: X-Consumer-Username: developer-team
+### Test Connectivity
+
+```bash
+# Test DNS resolution
+nslookup d18l8nt8fin3hz.cloudfront.net
+
+# Test HTTPS connectivity
+curl -v --connect-timeout 5 "${LITELLM_URL}/health/liveliness"
+
+# Test with timing
+curl -w "@-" -o /dev/null -s "${LITELLM_URL}/health/liveliness" <<'EOF'
+     time_namelookup:  %{time_namelookup}s\n
+        time_connect:  %{time_connect}s\n
+     time_appconnect:  %{time_appconnect}s\n
+          time_total:  %{time_total}s\n
+EOF
 ```
