@@ -72,3 +72,13 @@ variable "waf_rate_limit" {
   type        = number
   default     = 2000
 }
+
+# -----------------------------------------------------------------------------
+# Langfuse
+# -----------------------------------------------------------------------------
+
+variable "enable_langfuse" {
+  description = "Enable Langfuse routing via CloudFront"
+  type        = bool
+  default     = false
+}

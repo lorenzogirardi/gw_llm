@@ -130,3 +130,25 @@ variable "allowed_bedrock_models" {
     "arn:aws:bedrock:*:*:inference-profile/*"
   ]
 }
+
+# -----------------------------------------------------------------------------
+# Langfuse Integration (optional)
+# -----------------------------------------------------------------------------
+
+variable "langfuse_host" {
+  description = "Langfuse host URL (optional, enables Langfuse tracing)"
+  type        = string
+  default     = ""
+}
+
+variable "langfuse_public_key_secret_arn" {
+  description = "Secrets Manager ARN for Langfuse public key"
+  type        = string
+  default     = ""
+}
+
+variable "langfuse_secret_key_secret_arn" {
+  description = "Secrets Manager ARN for Langfuse secret key"
+  type        = string
+  default     = ""
+}

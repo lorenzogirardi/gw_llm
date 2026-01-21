@@ -2,6 +2,35 @@
 
 Questa guida spiega come gestire utenti e API key nel gateway LiteLLM.
 
+## Overview
+
+```mermaid
+flowchart TB
+    subgraph Admin["Admin (VPC Only)"]
+        script[litellm-users.sh]
+        alb[ALB Direct]
+    end
+
+    subgraph LiteLLM["LiteLLM Proxy"]
+        api[User/Key API]
+        budget[Budget Manager]
+    end
+
+    subgraph Storage["PostgreSQL (RDS)"]
+        users[(Users Table)]
+        keys[(API Keys Table)]
+        spend[(Spend Table)]
+    end
+
+    script -->|curl| alb
+    alb --> api
+    api --> budget
+    budget <--> users & keys & spend
+
+    style Admin fill:#ccffcc
+    style Storage fill:#336791,color:#fff
+```
+
 ## Prerequisiti
 
 ### Stato Attuale (POC)
@@ -17,6 +46,36 @@ Il POC include **PostgreSQL** (RDS db.t4g.micro) per user management completo:
 | Tracking spesa per utente | ✅ | Funziona |
 
 Il database è configurato automaticamente da Terraform.
+
+### Security Model
+
+```mermaid
+flowchart LR
+    subgraph Internet
+        client[Client]
+    end
+
+    subgraph CloudFront
+        cf[CloudFront]
+    end
+
+    subgraph VPC["AWS VPC"]
+        alb[ALB]
+        litellm[LiteLLM]
+    end
+
+    client -->|/v1/chat/completions ✅| cf
+    client -->|/user/* ❌ 403| cf
+    cf --> alb
+    alb --> litellm
+
+    admin[Admin VPN] -->|/user/* ✅| alb
+
+    style cf fill:#ffcccc
+    style admin fill:#ccffcc
+```
+
+> **⚠️ Security**: Gli endpoint admin (`/user/*`, `/key/*`, `/model/*`, `/spend/*`) sono **bloccati da CloudFront** e accessibili solo via ALB dall'interno della VPC.
 
 ---
 
@@ -232,10 +291,13 @@ Quando crei un utente, puoi specificare quali modelli può usare:
 
 Se preferisci non usare lo script:
 
+> **⚠️ Importante**: Gli endpoint admin sono bloccati da CloudFront. Usa l'ALB diretto dall'interno della VPC.
+
 ### Creare utente
 
 ```bash
-curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/user/new" \
+# Via ALB (dall'interno della VPC) - FUNZIONA
+curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/user/new" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -244,12 +306,16 @@ curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/user/new" \
     "budget_duration": "monthly",
     "models": ["claude-haiku-4-5"]
   }'
+
+# Via CloudFront - BLOCCATO (403 Forbidden)
+# curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/user/new" ...
 ```
 
 ### Generare API key
 
 ```bash
-curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/key/generate" \
+# Via ALB (dall'interno della VPC)
+curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/key/generate" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -262,7 +328,8 @@ curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/key/generate" \
 ### Listare utenti
 
 ```bash
-curl -X GET "https://d18l8nt8fin3hz.cloudfront.net/user/list" \
+# Via ALB (dall'interno della VPC)
+curl -X GET "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/user/list" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY"
 ```
 

@@ -92,6 +92,16 @@ output "grafana_log_group" {
   value       = module.grafana.log_group_name
 }
 
+output "langfuse_url" {
+  description = "Langfuse UI URL (HTTPS via CloudFront)"
+  value       = module.cloudfront.langfuse_url
+}
+
+output "langfuse_log_group" {
+  description = "Langfuse CloudWatch Log Group"
+  value       = module.langfuse.log_group_name
+}
+
 # -----------------------------------------------------------------------------
 # VPC (if created)
 # -----------------------------------------------------------------------------

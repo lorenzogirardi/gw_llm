@@ -29,3 +29,8 @@ output "grafana_url" {
   description = "Grafana URL via CloudFront"
   value       = "https://${aws_cloudfront_distribution.main.domain_name}/grafana"
 }
+
+output "langfuse_url" {
+  description = "Langfuse URL via CloudFront"
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}/langfuse"
+}

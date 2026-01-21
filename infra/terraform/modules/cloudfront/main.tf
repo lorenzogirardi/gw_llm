@@ -44,6 +44,32 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# CloudFront Function to strip /langfuse prefix
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudfront_function" "langfuse_rewrite" {
+  count = var.enable_langfuse ? 1 : 0
+
+  name    = "${var.project_name}-${var.environment}-langfuse-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Strip /langfuse prefix for Langfuse origin"
+
+  code = <<-EOF
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  // Strip /langfuse prefix
+  if (uri.startsWith('/langfuse')) {
+    request.uri = uri.replace(/^\/langfuse/, '') || '/';
+  }
+
+  return request;
+}
+EOF
+}
+
+# -----------------------------------------------------------------------------
 # CloudFront Distribution
 # -----------------------------------------------------------------------------
 
@@ -54,7 +80,7 @@ resource "aws_cloudfront_distribution" "main" {
   default_root_object = ""
   price_class         = var.price_class
 
-  # Origin: ALB
+  # Origin: ALB (port 80 - LiteLLM, Grafana)
   origin {
     domain_name = var.alb_dns_name
     origin_id   = "alb"
@@ -64,6 +90,22 @@ resource "aws_cloudfront_distribution" "main" {
       https_port             = 443
       origin_protocol_policy = "http-only" # ALB is HTTP for now
       origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Origin: ALB (port 8080 - Langfuse)
+  dynamic "origin" {
+    for_each = var.enable_langfuse ? [1] : []
+    content {
+      domain_name = var.alb_dns_name
+      origin_id   = "langfuse"
+
+      custom_origin_config {
+        http_port              = 8080
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
     }
   }
 
@@ -245,6 +287,89 @@ resource "aws_cloudfront_distribution" "main" {
     default_ttl            = 0
     max_ttl                = 0
     compress               = true
+  }
+
+  # Langfuse (no cache, with path rewrite)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_langfuse ? [1] : []
+    content {
+      path_pattern     = "/langfuse/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id = "langfuse"
+
+      forwarded_values {
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization"]
+
+        cookies {
+          forward = "all"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.langfuse_rewrite[0].arn
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = true
+    }
+  }
+
+  # Langfuse Next.js static assets (cached)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_langfuse ? [1] : []
+    content {
+      path_pattern     = "/_next/*"
+      allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+      cached_methods   = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id = "langfuse"
+
+      forwarded_values {
+        query_string = false
+        headers      = ["Host", "Origin"]
+
+        cookies {
+          forward = "none"
+        }
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 86400
+      max_ttl                = 604800
+      compress               = true
+    }
+  }
+
+  # Langfuse API routes (NextAuth and internal APIs)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_langfuse ? [1] : []
+    content {
+      path_pattern     = "/api/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id = "langfuse"
+
+      forwarded_values {
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization"]
+
+        cookies {
+          forward = "all"
+        }
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = true
+    }
   }
 
   # Restrictions

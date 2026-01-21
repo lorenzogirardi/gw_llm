@@ -34,10 +34,11 @@ C4Container
     title Container Diagram - LiteLLM Gateway
 
     Person(user, "API Consumer", "Application using LLM APIs")
+    Person(admin, "Admin", "VPC/VPN access only")
 
     Container_Boundary(aws, "AWS Cloud") {
         Container_Boundary(vpc, "VPC") {
-            Container(cloudfront, "CloudFront", "CDN", "TLS termination, caching")
+            Container(cloudfront, "CloudFront", "CDN", "TLS termination, admin endpoints blocked")
             Container(alb, "Application LB", "AWS ALB", "Load balancing, routing")
 
             Container_Boundary(ecs, "ECS Cluster") {
@@ -45,17 +46,21 @@ C4Container
                 Container(grafana, "Grafana", "Grafana 11", "Dashboards and visualization")
                 Container(victoria, "Victoria Metrics", "VictoriaMetrics", "Metrics storage (Prometheus-compatible)")
             }
+
+            ContainerDb(postgres, "PostgreSQL", "RDS db.t4g.micro", "Users, API keys, spend tracking")
         }
 
         ContainerDb(bedrock_claude, "Claude Models", "Bedrock", "Haiku, Sonnet, Opus")
-        Container(secrets, "Secrets Manager", "AWS", "API keys, master key")
+        Container(secrets, "Secrets Manager", "AWS", "API keys, master key, DB URL")
     }
 
-    Rel(user, cloudfront, "HTTPS", "443")
+    Rel(user, cloudfront, "HTTPS /v1/*", "443")
+    Rel(admin, alb, "HTTP /user/*", "VPC only")
     Rel(cloudfront, alb, "HTTP", "80")
     Rel(alb, litellm, "HTTP", "/v1/*")
     Rel(alb, grafana, "HTTP", "/grafana/*")
     Rel(litellm, bedrock_claude, "InvokeModel", "HTTPS/SigV4")
+    Rel(litellm, postgres, "Prisma ORM", "5432")
     Rel(litellm, secrets, "GetSecret", "AWS SDK")
     Rel(victoria, litellm, "Scrapes", "/metrics/")
     Rel(grafana, victoria, "Queries", "PromQL")
@@ -75,17 +80,22 @@ C4Component
         Component(auth, "Authentication", "Python", "API key validation")
         Component(budget, "Budget Manager", "Python", "User budgets and limits")
         Component(prometheus, "Prometheus Callback", "Python", "Metrics export")
+        Component(prisma, "Prisma ORM", "Python", "Database operations")
     }
 
     System_Ext(bedrock, "AWS Bedrock", "LLM APIs")
     System_Ext(consumer, "API Consumer", "Client application")
+    ContainerDb(postgres, "PostgreSQL", "User/Key/Spend data")
 
     Rel(consumer, api, "POST /v1/chat/completions", "HTTPS")
     Rel(api, auth, "Validate key", "Internal")
+    Rel(auth, prisma, "Lookup key", "SQL")
+    Rel(prisma, postgres, "Query", "5432")
     Rel(auth, budget, "Check budget", "Internal")
     Rel(budget, router, "Route request", "Internal")
     Rel(router, bedrock, "InvokeModel", "HTTPS")
     Rel(bedrock, router, "Response", "JSON")
+    Rel(router, prisma, "Update spend", "SQL")
     Rel(router, prometheus, "Record metrics", "Internal")
     Rel(prometheus, consumer, "Response", "HTTPS")
 ```
@@ -101,6 +111,7 @@ sequenceDiagram
     participant CF as CloudFront
     participant ALB as ALB
     participant LiteLLM as LiteLLM Proxy
+    participant PG as PostgreSQL
     participant Bedrock as AWS Bedrock
     participant VM as Victoria Metrics
 
@@ -108,12 +119,14 @@ sequenceDiagram
     CF->>ALB: Forward request
     ALB->>LiteLLM: Route to LiteLLM
 
-    LiteLLM->>LiteLLM: Validate API Key
+    LiteLLM->>PG: Lookup API Key
+    PG-->>LiteLLM: Key + User info
 
     alt Invalid Key
         LiteLLM-->>Client: 401 Unauthorized
     else Valid Key
-        LiteLLM->>LiteLLM: Check user budget
+        LiteLLM->>PG: Check user budget
+        PG-->>LiteLLM: Current spend
     end
 
     alt Budget exceeded
@@ -125,6 +138,7 @@ sequenceDiagram
     LiteLLM->>Bedrock: InvokeModel (SigV4 signed)
     Bedrock-->>LiteLLM: Response + token usage
 
+    LiteLLM->>PG: Update spend
     LiteLLM->>LiteLLM: Record metrics
     Note over LiteLLM: tokens, latency, cost
 
@@ -145,7 +159,7 @@ flowchart TB
     end
 
     subgraph AWS["AWS Region (us-west-1)"]
-        cf[CloudFront Distribution]
+        cf[CloudFront Distribution<br/>Admin endpoints blocked]
 
         subgraph VPC["VPC 10.10.0.0/16"]
             subgraph public["Public Subnets"]
@@ -155,10 +169,12 @@ flowchart TB
 
             subgraph private["Private Subnets"]
                 subgraph ECS["ECS Cluster (Fargate)"]
-                    litellm[LiteLLM Service<br/>0.5 vCPU, 1GB]
+                    litellm[LiteLLM Service<br/>1 vCPU, 2GB]
                     grafana[Grafana Service<br/>0.25 vCPU, 0.5GB]
                     victoria[Victoria Metrics<br/>0.25 vCPU, 0.5GB]
                 end
+
+                rds[(RDS PostgreSQL<br/>db.t4g.micro)]
             end
         end
 
@@ -178,6 +194,7 @@ flowchart TB
     alb --> grafana
     litellm --> nat
     nat --> bedrock
+    litellm <--> rds
     litellm -.-> secrets
     victoria --> litellm
     grafana --> victoria
@@ -185,6 +202,8 @@ flowchart TB
     style haiku fill:#90EE90
     style sonnet fill:#FFD700
     style opus fill:#FF6B6B
+    style rds fill:#336791,color:#fff
+    style cf fill:#ffcccc
 ```
 
 ## Data Flow Diagram
@@ -195,10 +214,11 @@ Shows how data flows through the system with security boundaries.
 flowchart LR
     subgraph External["External (Internet)"]
         client[API Client]
+        admin[Admin VPN]
     end
 
     subgraph Edge["Edge (CloudFront)"]
-        cf[CDN + TLS]
+        cf[CDN + TLS<br/>Blocks /user/*, /key/*]
     end
 
     subgraph DMZ["DMZ (Public Subnet)"]
@@ -212,6 +232,7 @@ flowchart LR
             proxy[Model Proxy]
         end
         metrics[Victoria Metrics]
+        pg[(PostgreSQL)]
     end
 
     subgraph AWS["AWS Services"]
@@ -219,21 +240,26 @@ flowchart LR
         sm[Secrets Manager]
     end
 
-    client -->|1. HTTPS| cf
+    client -->|1. HTTPS /v1/*| cf
+    admin -->|Admin /user/*| alb
     cf -->|2. HTTP| alb
     alb -->|3. Route| auth
-    auth -->|4. Validate| budget
-    budget -->|5. Check| proxy
-    proxy -->|6. SigV4| bedrock
-    bedrock -->|7. Response| proxy
-    proxy -->|8. Metrics| metrics
-    proxy -->|9. Response| client
+    auth -->|4. Query key| pg
+    auth -->|5. Validate| budget
+    budget -->|6. Check spend| pg
+    budget -->|7. Route| proxy
+    proxy -->|8. SigV4| bedrock
+    bedrock -->|9. Response| proxy
+    proxy -->|10. Update spend| pg
+    proxy -->|11. Metrics| metrics
+    proxy -->|12. Response| client
 
     style External fill:#ffcccc
     style Edge fill:#ffffcc
     style DMZ fill:#ffe4b5
     style Internal fill:#ccffcc
     style AWS fill:#ccccff
+    style pg fill:#336791,color:#fff
 ```
 
 ## User Budget Model
@@ -282,12 +308,46 @@ flowchart TB
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| CDN | CloudFront | TLS termination, edge caching |
+| CDN | CloudFront | TLS termination, admin endpoint blocking |
 | Load Balancer | ALB | Request routing, health checks |
 | API Proxy | LiteLLM | OpenAI-compatible API, model routing |
 | Compute | ECS Fargate | Serverless containers |
+| Database | RDS PostgreSQL | Users, API keys, spend tracking |
 | Metrics | Victoria Metrics | Prometheus-compatible TSDB |
 | Dashboards | Grafana | Visualization and alerting |
 | LLM Backend | AWS Bedrock | Claude model hosting |
-| Secrets | Secrets Manager | API keys, credentials |
+| Secrets | Secrets Manager | API keys, DB URL, master key |
 | IaC | Terraform | Infrastructure as Code |
+
+## Security Model
+
+```mermaid
+flowchart TB
+    subgraph Public["Public Access (CloudFront)"]
+        chat["/v1/chat/completions ✅"]
+        models["/v1/models ✅"]
+        health["/health/* ✅"]
+        metrics["/metrics/ ✅"]
+    end
+
+    subgraph Blocked["Blocked from CloudFront (403)"]
+        user["/user/* ❌"]
+        key["/key/* ❌"]
+        model["/model/* ❌"]
+        spend["/spend/* ❌"]
+    end
+
+    subgraph Internal["Internal Access Only (ALB)"]
+        user_alb["/user/* ✅"]
+        key_alb["/key/* ✅"]
+        model_alb["/model/* ✅"]
+        spend_alb["/spend/* ✅"]
+    end
+
+    cf[CloudFront] --> Public
+    cf -.->|403 Forbidden| Blocked
+    alb[ALB Direct] --> Internal
+
+    style Blocked fill:#ffcccc
+    style Internal fill:#ccffcc
+```

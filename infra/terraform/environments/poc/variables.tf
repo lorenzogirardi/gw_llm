@@ -124,3 +124,25 @@ variable "litellm_master_key_secret_arn" {
   description = "Secrets Manager ARN for LiteLLM master key"
   type        = string
 }
+
+# -----------------------------------------------------------------------------
+# Langfuse Configuration
+# -----------------------------------------------------------------------------
+
+variable "langfuse_database_url_secret_arn" {
+  description = "Secrets Manager ARN for Langfuse DATABASE_URL"
+  type        = string
+  default     = "arn:aws:secretsmanager:us-west-1:170674040462:secret:langfuse-poc/database-url-1HPs4X"
+}
+
+variable "langfuse_nextauth_secret_arn" {
+  description = "Secrets Manager ARN for Langfuse NEXTAUTH_SECRET"
+  type        = string
+  default     = "arn:aws:secretsmanager:us-west-1:170674040462:secret:langfuse-poc/nextauth-secret-UkBRRl"
+}
+
+variable "langfuse_salt_secret_arn" {
+  description = "Secrets Manager ARN for Langfuse SALT"
+  type        = string
+  default     = "arn:aws:secretsmanager:us-west-1:170674040462:secret:langfuse-poc/salt-js5cAy"
+}

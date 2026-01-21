@@ -1,45 +1,73 @@
 # LiteLLM Gateway - POC Environment
 
-Low-cost Proof of Concept deployment using AWS ECS Fargate.
+Low-cost Proof of Concept deployment using AWS ECS Fargate with PostgreSQL for user management and Langfuse for LLM observability.
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────────────────────────┐     ┌─────────────────┐
-│   Clients   │     │        ECS Fargate Cluster       │     │   AWS Bedrock   │
-│(Claude Code)│────▶│  ┌────────────────────────────┐  │────▶│                 │
-│             │     │  │ LiteLLM Proxy              │  │     │  - Claude Haiku │
-└─────────────┘     │  │ (OpenAI-compatible API)    │  │     │  - Claude Sonnet│
-                    │  └────────────────────────────┘  │     │  - Claude Opus  │
-                    │  ┌────────────────────────────┐  │     └─────────────────┘
-                    │  │ Victoria Metrics           │  │
-                    │  │ (Prometheus-compatible)    │  │
-                    │  └────────────────────────────┘  │
-                    │  ┌────────────────────────────┐  │
-                    │  │ Grafana                    │  │
-                    │  │ (Dashboards)               │  │
-                    │  └────────────────────────────┘  │
-                    └──────────────────────────────────┘
-                                    │
-                           ┌────────┴────────┐
-                           │   CloudFront    │
-                           │   (TLS + CDN)   │
-                           └─────────────────┘
+```mermaid
+flowchart TB
+    subgraph Internet
+        clients[Claude Code / API Clients]
+    end
+
+    subgraph AWS["AWS Cloud (us-west-1)"]
+        cf[CloudFront<br/>Admin endpoints blocked]
+
+        subgraph VPC["VPC 10.10.0.0/16"]
+            subgraph Public["Public Subnets"]
+                alb[Application Load Balancer]
+                nat[NAT Instance]
+            end
+
+            subgraph Private["Private Subnets"]
+                subgraph ECS["ECS Fargate Cluster"]
+                    litellm[LiteLLM Proxy<br/>1 vCPU, 2GB]
+                    langfuse[Langfuse<br/>0.5 vCPU, 1GB]
+                    grafana[Grafana<br/>0.25 vCPU, 0.5GB]
+                    victoria[Victoria Metrics<br/>0.25 vCPU, 0.5GB]
+                end
+
+                rds[(RDS PostgreSQL<br/>db.t4g.micro)]
+            end
+        end
+
+        bedrock[AWS Bedrock]
+        secrets[Secrets Manager]
+    end
+
+    clients --> cf
+    cf --> alb
+    alb --> litellm
+    alb --> grafana
+    alb --> langfuse
+    litellm --> bedrock
+    litellm <--> rds
+    litellm --> langfuse
+    langfuse <--> rds
+    victoria --> litellm
+    grafana --> victoria
+    litellm -.-> secrets
+
+    style cf fill:#ffcccc
+    style rds fill:#336791,color:#fff
+    style langfuse fill:#e6f3ff
 ```
 
 ## Estimated Costs
 
 | Component | Service | Monthly Cost |
 |-----------|---------|--------------|
-| LiteLLM | ECS Fargate (0.5 vCPU, 1GB) | ~$15 |
+| LiteLLM | ECS Fargate (1 vCPU, 2GB) | ~$30 |
+| Langfuse | ECS Fargate (0.5 vCPU, 1GB) | ~$15 |
 | Grafana | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8 |
 | Victoria Metrics | ECS Fargate (0.25 vCPU, 0.5GB) | ~$8 |
+| PostgreSQL | RDS (db.t4g.micro) | ~$12 |
 | Network | NAT Instance (t4g.nano) | ~$3 |
 | CDN | CloudFront | ~$1-5 |
-| **Total Fixed** | | **~$35-40** |
+| **Total Fixed** | | **~$75-80** |
 | LLM Usage | Bedrock (Haiku/Sonnet/Opus) | Pay per use |
 
-**Note**: Actual costs depend on usage. Much cheaper than Kong + AMP + AMG setup.
+**Note**: Actual costs depend on usage. PostgreSQL enables full user management with budget tracking. Langfuse provides LLM call tracing and observability.
 
 ## Quick Start
 
@@ -157,10 +185,53 @@ model_list:
 
 ## User Management
 
-### Create User
+### Security Model
+
+Admin endpoints are **blocked from CloudFront** for security:
+
+```mermaid
+flowchart LR
+    subgraph Public["CloudFront (Public)"]
+        chat["/v1/chat/completions ✅"]
+        models["/v1/models ✅"]
+    end
+
+    subgraph Blocked["Blocked (403)"]
+        user["/user/* ❌"]
+        key["/key/* ❌"]
+    end
+
+    subgraph Internal["ALB (VPC Only)"]
+        user_ok["/user/* ✅"]
+        key_ok["/key/* ✅"]
+    end
+
+    style Blocked fill:#ffcccc
+    style Internal fill:#ccffcc
+```
+
+### Using the Management Script
 
 ```bash
-curl -X POST "https://<cloudfront-domain>/user/new" \
+cd scripts/
+
+# Create user
+./litellm-users.sh create-user --email user@example.com --budget 50
+
+# Generate API key
+./litellm-users.sh create-key --alias "user-laptop" --budget 10
+
+# List users
+./litellm-users.sh list-users
+```
+
+### Manual API Access (VPC Only)
+
+Admin endpoints require ALB direct access from within the VPC:
+
+```bash
+# Create user (via ALB from VPC)
+curl -X POST "http://<alb-dns-name>/user/new" \
   -H "Authorization: Bearer <MASTER_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -168,19 +239,76 @@ curl -X POST "https://<cloudfront-domain>/user/new" \
     "max_budget": 10.0,
     "budget_duration": "monthly"
   }'
-```
 
-### Generate API Key
-
-```bash
-curl -X POST "https://<cloudfront-domain>/key/generate" \
+# Generate API key (via ALB from VPC)
+curl -X POST "http://<alb-dns-name>/key/generate" \
   -H "Authorization: Bearer <MASTER_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "<USER_ID>",
     "key_alias": "user-laptop"
   }'
+
+# Via CloudFront - BLOCKED
+# curl -X POST "https://<cloudfront-domain>/user/new" -> 403 Forbidden
 ```
+
+## Observability (Verified ✅)
+
+### Monitoring Stack
+
+```mermaid
+flowchart LR
+    subgraph LiteLLM
+        proxy[LiteLLM Proxy]
+    end
+
+    subgraph Metrics["Prometheus Metrics"]
+        victoria[Victoria Metrics]
+    end
+
+    subgraph Traces["LLM Traces"]
+        langfuse[Langfuse]
+    end
+
+    subgraph Dashboards
+        grafana[Grafana]
+    end
+
+    proxy -->|/metrics/| victoria
+    proxy -->|callbacks| langfuse
+    grafana --> victoria
+    grafana -.->|correlate| langfuse
+
+    style langfuse fill:#e6f3ff
+```
+
+### Endpoints
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Grafana** | `/grafana` | Metrics dashboards |
+| **Langfuse** | `/langfuse/` | LLM trace viewer |
+| **Metrics** | `/metrics/` | Prometheus metrics |
+
+### Verified Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `litellm_proxy_total_requests_metric` | Total requests per user |
+| `litellm_total_tokens_metric` | Token usage (input + output) |
+| `litellm_spend_metric` | Cost tracking per user |
+| `litellm_llm_api_latency_metric` | Request latency |
+
+### Langfuse Traces
+
+Each LLM call is logged with:
+- Full request/response content
+- Token counts and costs
+- Latency measurements
+- User attribution
+
+Access: https://d18l8nt8fin3hz.cloudfront.net/langfuse/
 
 ## Cleanup
 
@@ -195,6 +323,7 @@ terraform destroy
 | `cloudfront_domain` | CloudFront distribution domain |
 | `alb_dns_name` | ALB DNS name (internal) |
 | `grafana_url` | Grafana dashboard URL |
+| `langfuse_url` | Langfuse trace viewer URL |
 | `ecs_cluster_name` | ECS cluster name |
 
 ## Troubleshooting
@@ -220,3 +349,32 @@ aws logs tail /ecs/victoria-metrics --follow --region us-west-1
 ### Grafana login issues
 - Default user: `admin`
 - Password: From Secrets Manager (`kong-llm-gateway/grafana-admin-password`)
+
+### Langfuse not loading
+```bash
+# Check ECS service
+aws ecs describe-services --cluster kong-llm-gateway-poc --services langfuse --region us-west-1
+
+# Check logs
+aws logs tail /ecs/kong-llm-gateway-poc/langfuse --follow --region us-west-1
+
+# Check ALB target health
+aws elbv2 describe-target-health \
+  --target-group-arn $(aws elbv2 describe-target-groups \
+    --region us-west-1 \
+    --query "TargetGroups[?contains(TargetGroupName, 'langfuse')].TargetGroupArn" \
+    --output text) \
+  --region us-west-1
+```
+
+### Langfuse traces not appearing
+1. Check LiteLLM callbacks are configured:
+   ```bash
+   aws logs tail /ecs/kong-llm-gateway-poc/litellm --region us-west-1 | grep -i langfuse
+   ```
+
+2. Verify Langfuse API is reachable:
+   ```bash
+   curl -s https://d18l8nt8fin3hz.cloudfront.net/api/public/health
+   # Expected: {"status":"OK","version":"..."}
+   ```

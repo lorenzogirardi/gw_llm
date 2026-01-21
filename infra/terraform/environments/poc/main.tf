@@ -336,8 +336,9 @@ module "cloudfront" {
   alb_dns_name = module.ecs.alb_dns_name
 
   # Settings
-  price_class = "PriceClass_100" # US, Canada, Europe only
-  enable_waf  = false            # Disable WAF for POC (cost savings)
+  price_class    = "PriceClass_100" # US, Canada, Europe only
+  enable_waf     = false            # Disable WAF for POC (cost savings)
+  enable_langfuse = true            # Enable Langfuse via /langfuse/*
 
   tags = local.tags
 }
@@ -370,6 +371,11 @@ module "litellm" {
   # Secrets
   master_key_secret_arn   = var.litellm_master_key_secret_arn
   database_url_secret_arn = module.rds.database_url_secret_arn
+
+  # Langfuse integration
+  langfuse_host                  = "https://d18l8nt8fin3hz.cloudfront.net"
+  langfuse_public_key_secret_arn = "arn:aws:secretsmanager:us-west-1:170674040462:secret:kong-llm-gateway-poc/langfuse-public-key-JMZGH3"
+  langfuse_secret_key_secret_arn = "arn:aws:secretsmanager:us-west-1:170674040462:secret:kong-llm-gateway-poc/langfuse-secret-key-mWJMJP"
 
   # Bedrock models
   allowed_bedrock_models = [
@@ -429,6 +435,11 @@ litellm_settings:
   cache: false
   callbacks:
     - prometheus
+    - langfuse
+  success_callback:
+    - langfuse
+  failure_callback:
+    - langfuse
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -440,4 +451,40 @@ general_settings:
 YAML
 
   tags = local.tags
+}
+
+# -----------------------------------------------------------------------------
+# Langfuse (LLM Observability)
+# -----------------------------------------------------------------------------
+
+module "langfuse" {
+  source = "../../modules/langfuse"
+
+  project_name = local.project_name
+  environment  = local.environment
+
+  # Network
+  vpc_id             = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  private_subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
+
+  # ECS
+  ecs_cluster_id        = module.ecs.cluster_id
+  alb_security_group_id = module.ecs.alb_security_group_id
+  alb_arn               = module.ecs.alb_arn
+
+  # Langfuse settings
+  langfuse_image = "langfuse/langfuse:2"
+  langfuse_url   = module.cloudfront.langfuse_url
+  task_cpu       = 512
+  task_memory    = 1024
+  use_spot       = true
+
+  # Secrets
+  database_url_secret_arn = var.langfuse_database_url_secret_arn
+  nextauth_secret_arn     = var.langfuse_nextauth_secret_arn
+  salt_secret_arn         = var.langfuse_salt_secret_arn
+
+  tags = local.tags
+
+  depends_on = [module.rds, module.cloudfront]
 }

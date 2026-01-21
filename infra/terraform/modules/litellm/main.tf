@@ -63,24 +63,32 @@ resource "aws_ecs_task_definition" "litellm" {
         }
       ]
 
-      environment = [
-        {
-          name  = "AWS_REGION"
-          value = data.aws_region.current.name
-        },
-        {
-          name  = "LITELLM_LOG"
-          value = "INFO"
-        },
-        {
-          name  = "STORE_MODEL_IN_DB"
-          value = "True"
-        },
-        {
-          name  = "PROMETHEUS_MULTIPROC_DIR"
-          value = "/tmp/prometheus_multiproc"
-        }
-      ]
+      environment = concat(
+        [
+          {
+            name  = "AWS_REGION"
+            value = data.aws_region.current.name
+          },
+          {
+            name  = "LITELLM_LOG"
+            value = "INFO"
+          },
+          {
+            name  = "STORE_MODEL_IN_DB"
+            value = "True"
+          },
+          {
+            name  = "PROMETHEUS_MULTIPROC_DIR"
+            value = "/tmp/prometheus_multiproc"
+          }
+        ],
+        var.langfuse_host != "" ? [
+          {
+            name  = "LANGFUSE_HOST"
+            value = var.langfuse_host
+          }
+        ] : []
+      )
 
       secrets = concat(
         [
@@ -93,6 +101,18 @@ resource "aws_ecs_task_definition" "litellm" {
           {
             name      = "DATABASE_URL"
             valueFrom = var.database_url_secret_arn
+          }
+        ] : [],
+        var.langfuse_public_key_secret_arn != "" ? [
+          {
+            name      = "LANGFUSE_PUBLIC_KEY"
+            valueFrom = var.langfuse_public_key_secret_arn
+          }
+        ] : [],
+        var.langfuse_secret_key_secret_arn != "" ? [
+          {
+            name      = "LANGFUSE_SECRET_KEY"
+            valueFrom = var.langfuse_secret_key_secret_arn
           }
         ] : []
       )
@@ -297,7 +317,9 @@ resource "aws_iam_role_policy" "litellm_secrets" {
       Action = ["secretsmanager:GetSecretValue"]
       Resource = compact([
         var.master_key_secret_arn,
-        var.database_url_secret_arn
+        var.database_url_secret_arn,
+        var.langfuse_public_key_secret_arn,
+        var.langfuse_secret_key_secret_arn
       ])
     }]
   })
