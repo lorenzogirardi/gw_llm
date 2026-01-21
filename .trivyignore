@@ -1,0 +1,8 @@
+# Trivy Ignore File
+# Add CVE IDs or rule IDs to ignore false positives
+#
+# Examples:
+# CVE-2023-12345
+# AVD-AWS-0001
+
+# Ignore specific findings here as needed
