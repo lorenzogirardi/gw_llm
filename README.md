@@ -1,5 +1,8 @@
 # LiteLLM Gateway for AWS Bedrock
 
+![CI](https://github.com/lgirardi/gw_llm/actions/workflows/ci.yml/badge.svg)
+![Terraform](https://github.com/lgirardi/gw_llm/actions/workflows/terraform-plan.yml/badge.svg)
+
 OpenAI-compatible API Gateway for AWS Bedrock with user management, usage tracking, and cost monitoring.
 
 ## Table of Contents
@@ -235,6 +238,7 @@ LiteLLM automatically tracks costs based on model pricing:
 |----------|-------------|
 | [Claude Code Config](docs/claude-code-config.md) | Setup guide for Claude Code users |
 | [API Examples](docs/examples/curl-examples.md) | curl commands for all endpoints |
+| [Proxy & Token Metering](docs/PROXY_TOKEN.md) | How the gateway and token tracking works |
 
 ### Infrastructure
 
@@ -242,6 +246,8 @@ LiteLLM automatically tracks costs based on model pricing:
 |-----------|-------------|
 | [infra/terraform](infra/terraform) | Terraform modules and environments |
 | [infra/grafana](infra/grafana) | Grafana dashboards and provisioning |
+| [infra/README.md](infra/README.md) | Local development with Docker Compose |
+| [.github/workflows](.github/workflows) | CI/CD pipelines |
 
 ---
 
@@ -301,6 +307,46 @@ Authorization: Bearer <your-api-key>
 ### Connection timeout
 - Verify ANTHROPIC_BASE_URL is correct
 - Test health: `curl $ANTHROPIC_BASE_URL/health/liveliness`
+
+---
+
+## Development
+
+### Local Development
+
+Run the full stack locally with Docker Compose:
+
+```bash
+cd infra
+cp .env.example .env
+# Edit .env with your AWS credentials
+
+docker-compose up -d
+```
+
+Local services:
+- **LiteLLM**: http://localhost:4000
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Victoria Metrics**: http://localhost:8428
+
+### CI/CD
+
+This project uses GitHub Actions for CI/CD:
+
+| Workflow | Description | Trigger |
+|----------|-------------|---------|
+| `ci.yml` | Security scan, Terraform validate, build, deploy | Push to main |
+| `terraform-plan.yml` | Terraform plan with PR comment | Pull requests |
+
+See [`.github/workflows/`](.github/workflows/) for details.
+
+### Contributing
+
+1. Create a feature branch
+2. Make changes with tests
+3. Run `terraform fmt -recursive` for Terraform files
+4. Open a PR - Terraform plan will run automatically
+5. Merge after review - CI will deploy to POC
 
 ---
 

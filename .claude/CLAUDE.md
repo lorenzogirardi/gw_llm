@@ -318,9 +318,31 @@ LiteLLM config is embedded in Terraform. To update:
 
 ---
 
+# CI/CD Pipeline
+
+## GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push to main | Security scan, Terraform validate, build Grafana, deploy POC |
+| `terraform-plan.yml` | Pull requests | Run terraform plan, comment on PR |
+
+## Dependabot
+
+- Weekly updates for GitHub Actions, Terraform, Docker
+- Auto-creates PRs for dependency updates
+
+## IAM User
+
+- **Name**: `github-actions-llm-gateway`
+- **Credentials**: Stored in GitHub Secrets
+
+---
+
 # Project-Specific
 
 - **Read CLAUDE.md first**: Contains project state and conventions
 - **No Claude signature in commits**: Remove Co-Authored-By if present
 - **Validate Terraform**: Always run `terraform validate` before commit
 - **Security scan**: Run `trufflehog` on remote repo after push
+- **CI/CD**: Push to main triggers automatic deployment to POC
