@@ -258,6 +258,37 @@ module "grafana" {
 }
 
 # -----------------------------------------------------------------------------
+# RDS PostgreSQL (for LiteLLM user management)
+# -----------------------------------------------------------------------------
+
+module "rds" {
+  source = "../../modules/rds"
+
+  project_name = local.project_name
+  environment  = local.environment
+
+  # Network
+  vpc_id             = var.create_vpc ? module.vpc[0].vpc_id : var.vpc_id
+  private_subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.private_subnet_ids
+
+  # Allow connections from VPC (LiteLLM and other services)
+  allowed_cidr_blocks = [var.vpc_cidr]
+
+  # Instance config (minimal for POC)
+  instance_class    = "db.t4g.micro" # ~$12/month
+  allocated_storage = 20
+  engine_version    = "16.6"
+
+  # POC settings (not production-ready)
+  multi_az            = false
+  deletion_protection = false
+  skip_final_snapshot = true
+  backup_retention_period = 1
+
+  tags = local.tags
+}
+
+# -----------------------------------------------------------------------------
 # Victoria Metrics (Prometheus-compatible metrics storage)
 # -----------------------------------------------------------------------------
 
@@ -337,7 +368,8 @@ module "litellm" {
   use_spot       = false # Use regular Fargate for stability
 
   # Secrets
-  master_key_secret_arn = var.litellm_master_key_secret_arn
+  master_key_secret_arn   = var.litellm_master_key_secret_arn
+  database_url_secret_arn = module.rds.database_url_secret_arn
 
   # Bedrock models
   allowed_bedrock_models = [
