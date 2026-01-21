@@ -16,7 +16,7 @@ jobs:
     name: Security Scan (Secrets)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -30,7 +30,7 @@ jobs:
     name: Trivy Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Trivy vulnerability scanner (filesystem)
         uses: aquasecurity/trivy-action@master
@@ -57,7 +57,7 @@ jobs:
     name: Checkov IaC Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -85,7 +85,7 @@ jobs:
     name: Terraform Validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -110,7 +110,7 @@ jobs:
     needs: [security-scan, trivy-scan, checkov-scan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
@@ -152,7 +152,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: poc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
