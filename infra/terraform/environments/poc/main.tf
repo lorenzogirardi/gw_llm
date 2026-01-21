@@ -152,6 +152,13 @@ resource "aws_instance" "nat" {
   associate_public_ip_address = true
   source_dest_check           = false
 
+  # Enforce IMDSv2 (CKV_AWS_79)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 1
+  }
+
   # fck-nat comes pre-configured, no user_data needed
 
   tags = merge(local.tags, {
