@@ -14,6 +14,36 @@ terraform {
 }
 
 # -----------------------------------------------------------------------------
+# CloudFront Function to block admin endpoints
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudfront_function" "block_admin" {
+  count = var.block_admin_endpoints ? 1 : 0
+
+  name    = "${var.project_name}-${var.environment}-block-admin"
+  runtime = "cloudfront-js-2.0"
+  comment = "Block admin endpoints from public access"
+
+  code = <<-EOF
+function handler(event) {
+  return {
+    statusCode: 403,
+    statusDescription: 'Forbidden',
+    headers: {
+      'content-type': { value: 'application/json' }
+    },
+    body: JSON.stringify({
+      error: {
+        message: 'Admin endpoints not accessible via CloudFront. Use ALB directly from VPC.',
+        code: 'FORBIDDEN'
+      }
+    })
+  };
+}
+EOF
+}
+
+# -----------------------------------------------------------------------------
 # CloudFront Distribution
 # -----------------------------------------------------------------------------
 
@@ -57,6 +87,118 @@ resource "aws_cloudfront_distribution" "main" {
     default_ttl            = 0
     max_ttl                = 0
     compress               = true
+  }
+
+  # Block /user/* admin endpoints (if enabled)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.block_admin_endpoints ? [1] : []
+    content {
+      path_pattern     = "/user/*"
+      allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "alb"
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.block_admin[0].arn
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+    }
+  }
+
+  # Block /key/* admin endpoints (if enabled)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.block_admin_endpoints ? [1] : []
+    content {
+      path_pattern     = "/key/*"
+      allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "alb"
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.block_admin[0].arn
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+    }
+  }
+
+  # Block /spend/* admin endpoints (if enabled)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.block_admin_endpoints ? [1] : []
+    content {
+      path_pattern     = "/spend/*"
+      allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "alb"
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.block_admin[0].arn
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+    }
+  }
+
+  # Block /model/* admin endpoints (if enabled)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.block_admin_endpoints ? [1] : []
+    content {
+      path_pattern     = "/model/*"
+      allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "alb"
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.block_admin[0].arn
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+    }
   }
 
   # Grafana behavior (longer cache for static assets)

@@ -6,19 +6,17 @@ Questa guida spiega come gestire utenti e API key nel gateway LiteLLM.
 
 ### Stato Attuale (POC)
 
-Il POC attualmente usa solo la **master key** senza database. Questo significa:
+Il POC include **PostgreSQL** (RDS db.t4g.micro) per user management completo:
 
 | Feature | Disponibile | Note |
 |---------|-------------|------|
 | API Key singola (master) | ✅ | Funziona |
-| Creare API keys con budget | ⚠️ | Richiede database |
-| Creare utenti con budget | ⚠️ | Richiede database |
-| Associare modelli a utenti | ⚠️ | Richiede database |
-| Tracking spesa per utente | ⚠️ | Richiede database |
+| Creare API keys con budget | ✅ | Funziona |
+| Creare utenti con budget | ✅ | Funziona |
+| Associare modelli a utenti | ✅ | Funziona |
+| Tracking spesa per utente | ✅ | Funziona |
 
-### Abilitare User Management Completo
-
-Per abilitare tutte le funzionalità, serve un database PostgreSQL. Vedi [Configurazione Database](#configurazione-database-opzionale).
+Il database è configurato automaticamente da Terraform.
 
 ---
 
