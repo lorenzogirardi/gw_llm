@@ -280,9 +280,9 @@ module "rds" {
   engine_version    = "16.6"
 
   # POC settings (not production-ready)
-  multi_az            = false
-  deletion_protection = false
-  skip_final_snapshot = true
+  multi_az                = false
+  deletion_protection     = false
+  skip_final_snapshot     = true
   backup_retention_period = 1
 
   tags = local.tags
@@ -336,9 +336,9 @@ module "cloudfront" {
   alb_dns_name = module.ecs.alb_dns_name
 
   # Settings
-  price_class    = "PriceClass_100" # US, Canada, Europe only
-  enable_waf     = false            # Disable WAF for POC (cost savings)
-  enable_langfuse = true            # Enable Langfuse via /langfuse/*
+  price_class     = "PriceClass_100" # US, Canada, Europe only
+  enable_waf      = false            # Disable WAF for POC (cost savings)
+  enable_langfuse = true             # Enable Langfuse via /langfuse/*
 
   tags = local.tags
 }
