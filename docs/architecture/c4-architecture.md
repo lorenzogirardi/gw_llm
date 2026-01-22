@@ -43,24 +43,28 @@ C4Container
 
             Container_Boundary(ecs, "ECS Cluster") {
                 Container(litellm, "LiteLLM Proxy", "Python/FastAPI", "OpenAI-compatible API, model routing")
+                Container(langfuse, "Langfuse", "Next.js", "LLM observability and tracing")
                 Container(grafana, "Grafana", "Grafana 11", "Dashboards and visualization")
                 Container(victoria, "Victoria Metrics", "VictoriaMetrics", "Metrics storage (Prometheus-compatible)")
             }
 
-            ContainerDb(postgres, "PostgreSQL", "RDS db.t4g.micro", "Users, API keys, spend tracking")
+            ContainerDb(postgres, "PostgreSQL", "RDS db.t4g.micro", "Users, API keys, spend tracking, Langfuse data")
         }
 
         ContainerDb(bedrock_claude, "Claude Models", "Bedrock", "Haiku, Sonnet, Opus")
-        Container(secrets, "Secrets Manager", "AWS", "API keys, master key, DB URL")
+        Container(secrets, "Secrets Manager", "AWS", "API keys, master key, DB URL, Langfuse keys")
     }
 
     Rel(user, cloudfront, "HTTPS /v1/*", "443")
     Rel(admin, alb, "HTTP /user/*", "VPC only")
     Rel(cloudfront, alb, "HTTP", "80")
     Rel(alb, litellm, "HTTP", "/v1/*")
+    Rel(alb, langfuse, "HTTP", "/langfuse/*")
     Rel(alb, grafana, "HTTP", "/grafana/*")
     Rel(litellm, bedrock_claude, "InvokeModel", "HTTPS/SigV4")
     Rel(litellm, postgres, "Prisma ORM", "5432")
+    Rel(litellm, langfuse, "Traces", "Langfuse callback")
+    Rel(langfuse, postgres, "Store traces", "5432")
     Rel(litellm, secrets, "GetSecret", "AWS SDK")
     Rel(victoria, litellm, "Scrapes", "/metrics/")
     Rel(grafana, victoria, "Queries", "PromQL")
@@ -80,11 +84,13 @@ C4Component
         Component(auth, "Authentication", "Python", "API key validation")
         Component(budget, "Budget Manager", "Python", "User budgets and limits")
         Component(prometheus, "Prometheus Callback", "Python", "Metrics export")
+        Component(langfuse_cb, "Langfuse Callback", "Python", "LLM trace logging")
         Component(prisma, "Prisma ORM", "Python", "Database operations")
     }
 
     System_Ext(bedrock, "AWS Bedrock", "LLM APIs")
     System_Ext(consumer, "API Consumer", "Client application")
+    System_Ext(langfuse, "Langfuse", "LLM observability")
     ContainerDb(postgres, "PostgreSQL", "User/Key/Spend data")
 
     Rel(consumer, api, "POST /v1/chat/completions", "HTTPS")
@@ -97,6 +103,8 @@ C4Component
     Rel(bedrock, router, "Response", "JSON")
     Rel(router, prisma, "Update spend", "SQL")
     Rel(router, prometheus, "Record metrics", "Internal")
+    Rel(router, langfuse_cb, "Log trace", "Internal")
+    Rel(langfuse_cb, langfuse, "Send trace", "HTTPS")
     Rel(prometheus, consumer, "Response", "HTTPS")
 ```
 
@@ -113,6 +121,7 @@ sequenceDiagram
     participant LiteLLM as LiteLLM Proxy
     participant PG as PostgreSQL
     participant Bedrock as AWS Bedrock
+    participant LF as Langfuse
     participant VM as Victoria Metrics
 
     Client->>CF: POST /v1/chat/completions
@@ -140,7 +149,8 @@ sequenceDiagram
 
     LiteLLM->>PG: Update spend
     LiteLLM->>LiteLLM: Record metrics
-    Note over LiteLLM: tokens, latency, cost
+    LiteLLM->>LF: Send trace (async)
+    Note over LiteLLM,LF: tokens, latency, cost, input/output
 
     LiteLLM-->>Client: 200 OK + response
 
@@ -170,6 +180,7 @@ flowchart TB
             subgraph private["Private Subnets"]
                 subgraph ECS["ECS Cluster (Fargate)"]
                     litellm[LiteLLM Service<br/>1 vCPU, 2GB]
+                    langfuse[Langfuse Service<br/>0.5 vCPU, 1GB]
                     grafana[Grafana Service<br/>0.25 vCPU, 0.5GB]
                     victoria[Victoria Metrics<br/>0.25 vCPU, 0.5GB]
                 end
@@ -191,10 +202,13 @@ flowchart TB
     client --> cf
     cf --> alb
     alb --> litellm
+    alb --> langfuse
     alb --> grafana
     litellm --> nat
     nat --> bedrock
     litellm <--> rds
+    litellm --> langfuse
+    langfuse <--> rds
     litellm -.-> secrets
     victoria --> litellm
     grafana --> victoria
@@ -204,6 +218,7 @@ flowchart TB
     style opus fill:#FF6B6B
     style rds fill:#336791,color:#fff
     style cf fill:#ffcccc
+    style langfuse fill:#e6f3ff
 ```
 
 ## Data Flow Diagram
@@ -231,6 +246,7 @@ flowchart LR
             budget[Budget]
             proxy[Model Proxy]
         end
+        langfuse[Langfuse]
         metrics[Victoria Metrics]
         pg[(PostgreSQL)]
     end
@@ -252,7 +268,9 @@ flowchart LR
     bedrock -->|9. Response| proxy
     proxy -->|10. Update spend| pg
     proxy -->|11. Metrics| metrics
-    proxy -->|12. Response| client
+    proxy -->|12. Trace| langfuse
+    langfuse -->|13. Store| pg
+    proxy -->|14. Response| client
 
     style External fill:#ffcccc
     style Edge fill:#ffffcc
@@ -260,6 +278,7 @@ flowchart LR
     style Internal fill:#ccffcc
     style AWS fill:#ccccff
     style pg fill:#336791,color:#fff
+    style langfuse fill:#e6f3ff
 ```
 
 ## User Budget Model
@@ -311,12 +330,13 @@ flowchart TB
 | CDN | CloudFront | TLS termination, admin endpoint blocking |
 | Load Balancer | ALB | Request routing, health checks |
 | API Proxy | LiteLLM | OpenAI-compatible API, model routing |
+| LLM Tracing | Langfuse | LLM observability, request/response logging |
 | Compute | ECS Fargate | Serverless containers |
-| Database | RDS PostgreSQL | Users, API keys, spend tracking |
+| Database | RDS PostgreSQL | Users, API keys, spend tracking, traces |
 | Metrics | Victoria Metrics | Prometheus-compatible TSDB |
 | Dashboards | Grafana | Visualization and alerting |
 | LLM Backend | AWS Bedrock | Claude model hosting |
-| Secrets | Secrets Manager | API keys, DB URL, master key |
+| Secrets | Secrets Manager | API keys, DB URL, master key, Langfuse keys |
 | IaC | Terraform | Infrastructure as Code |
 
 ## Security Model

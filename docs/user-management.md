@@ -1,6 +1,6 @@
 # LiteLLM User Management Guide
 
-Questa guida spiega come gestire utenti e API key nel gateway LiteLLM.
+This guide explains how to manage users and API keys in the LiteLLM gateway.
 
 ## Overview
 
@@ -31,21 +31,21 @@ flowchart TB
     style Storage fill:#336791,color:#fff
 ```
 
-## Prerequisiti
+## Prerequisites
 
-### Stato Attuale (POC)
+### Current Status (POC)
 
-Il POC include **PostgreSQL** (RDS db.t4g.micro) per user management completo:
+The POC includes **PostgreSQL** (RDS db.t4g.micro) for full user management:
 
-| Feature | Disponibile | Note |
-|---------|-------------|------|
-| API Key singola (master) | ✅ | Funziona |
-| Creare API keys con budget | ✅ | Funziona |
-| Creare utenti con budget | ✅ | Funziona |
-| Associare modelli a utenti | ✅ | Funziona |
-| Tracking spesa per utente | ✅ | Funziona |
+| Feature | Available | Notes |
+|---------|-----------|-------|
+| Single API Key (master) | ✅ | Works |
+| Create API keys with budget | ✅ | Works |
+| Create users with budget | ✅ | Works |
+| Associate models to users | ✅ | Works |
+| Per-user spend tracking | ✅ | Works |
 
-Il database è configurato automaticamente da Terraform.
+The database is automatically configured by Terraform.
 
 ### Security Model
 
@@ -75,84 +75,84 @@ flowchart LR
     style admin fill:#ccffcc
 ```
 
-> **⚠️ Security**: Gli endpoint admin (`/user/*`, `/key/*`, `/model/*`, `/spend/*`) sono **bloccati da CloudFront** e accessibili solo via ALB dall'interno della VPC.
+> **⚠️ Security**: Admin endpoints (`/user/*`, `/key/*`, `/model/*`, `/spend/*`) are **blocked by CloudFront** and only accessible via ALB from within the VPC.
 
 ---
 
 ## Quick Start
 
-### 1. Configurare l'ambiente
+### 1. Configure environment
 
 ```bash
-# Esporta la master key
+# Export master key
 export LITELLM_MASTER_KEY="sk-litellm-xxxxxxxxxx"
 
-# Opzionale: URL custom
+# Optional: Custom URL
 export LITELLM_URL="https://d18l8nt8fin3hz.cloudfront.net"
 ```
 
-### 2. Usare lo script
+### 2. Use the script
 
 ```bash
 cd scripts/
 
-# Mostra help
+# Show help
 ./litellm-users.sh help
 
-# Crea un utente
+# Create a user
 ./litellm-users.sh create-user --email user@example.com --budget 50
 
-# Genera API key
+# Generate API key
 ./litellm-users.sh create-key --alias "user-laptop"
 
-# Lista utenti
+# List users
 ./litellm-users.sh list-users
 ```
 
 ---
 
-## Comandi Disponibili
+## Available Commands
 
-### Gestione Utenti
+### User Management
 
-#### Creare un utente
+#### Create a user
 
 ```bash
-# Utente base
+# Basic user
 ./litellm-users.sh create-user --email user@example.com
 
-# Con budget mensile
+# With monthly budget
 ./litellm-users.sh create-user \
   --email user@example.com \
   --budget 50 \
   --duration monthly
 
-# Con modelli specifici
+# With specific models
 ./litellm-users.sh create-user \
   --email dev@example.com \
   --budget 10 \
   --models '["claude-haiku-4-5"]'
 ```
 
-#### Listare utenti
+#### List users
 
 ```bash
 ./litellm-users.sh list-users
 ```
 
-#### Info utente
+#### Get user info
 
 ```bash
 ./litellm-users.sh get-user <user_id>
 ```
 
-#### Eliminare utente
+#### Delete user
 
 ```bash
 ./litellm-users.sh delete-user <user_id>
 ```
 
-#### Aggiornare budget
+#### Update budget
 
 ```bash
 ./litellm-users.sh update-budget --user-id <user_id> --budget 100
@@ -160,36 +160,36 @@ cd scripts/
 
 ---
 
-### Gestione API Keys
+### API Key Management
 
-#### Generare API key
+#### Generate API key
 
 ```bash
-# Key standalone con budget
+# Standalone key with budget
 ./litellm-users.sh create-key \
   --alias "test-key" \
   --budget 5 \
   --duration monthly
 
-# Key per utente specifico
+# Key for specific user
 ./litellm-users.sh create-key \
   --user-id user_xxx \
   --alias "laptop-key"
 
-# Key con modelli limitati
+# Key with limited models
 ./litellm-users.sh create-key \
   --alias "haiku-only" \
   --models '["claude-haiku-4-5"]' \
   --budget 10
 ```
 
-#### Listare API keys
+#### List API keys
 
 ```bash
 ./litellm-users.sh list-keys
 ```
 
-#### Eliminare API key
+#### Delete API key
 
 ```bash
 ./litellm-users.sh delete-key sk-litellm-xxx
@@ -197,41 +197,41 @@ cd scripts/
 
 ---
 
-## Associare Modelli agli Utenti
+## Associating Models to Users
 
-### Limitare modelli per utente
+### Limit models per user
 
-Quando crei un utente, puoi specificare quali modelli può usare:
+When creating a user, you can specify which models they can use:
 
 ```bash
-# Solo Haiku (economico)
+# Haiku only (economical)
 ./litellm-users.sh create-user \
   --email intern@example.com \
   --budget 5 \
   --models '["claude-haiku-4-5"]'
 
-# Haiku e Sonnet
+# Haiku and Sonnet
 ./litellm-users.sh create-user \
   --email developer@example.com \
   --budget 50 \
   --models '["claude-haiku-4-5", "claude-sonnet-4-5"]'
 
-# Tutti i modelli
+# All models
 ./litellm-users.sh create-user \
   --email senior@example.com \
   --budget 200
 ```
 
-### Limitare modelli per API key
+### Limit models per API key
 
 ```bash
-# Key per testing (solo Haiku, budget basso)
+# Testing key (Haiku only, low budget)
 ./litellm-users.sh create-key \
   --alias "test-key" \
   --models '["claude-haiku-4-5"]' \
   --budget 2
 
-# Key di produzione (tutti i modelli)
+# Production key (all models)
 ./litellm-users.sh create-key \
   --alias "prod-key" \
   --budget 100
@@ -239,25 +239,25 @@ Quando crei un utente, puoi specificare quali modelli può usare:
 
 ---
 
-## Esempi Pratici
+## Practical Examples
 
-### Scenario 1: Team di sviluppo
+### Scenario 1: Development team
 
 ```bash
-# Lead developer - tutti i modelli, budget alto
+# Lead developer - all models, high budget
 ./litellm-users.sh create-user \
   --email lead@company.com \
   --budget 200 \
   --duration monthly
 
-# Developer - Haiku e Sonnet, budget medio
+# Developer - Haiku and Sonnet, medium budget
 ./litellm-users.sh create-user \
   --email dev@company.com \
   --budget 50 \
   --duration monthly \
   --models '["claude-haiku-4-5", "claude-sonnet-4-5"]'
 
-# Intern - solo Haiku, budget basso
+# Intern - Haiku only, low budget
 ./litellm-users.sh create-user \
   --email intern@company.com \
   --budget 10 \
@@ -265,7 +265,7 @@ Quando crei un utente, puoi specificare quali modelli può usare:
   --models '["claude-haiku-4-5"]'
 ```
 
-### Scenario 2: Chiavi per ambienti diversi
+### Scenario 2: Keys for different environments
 
 ```bash
 # Development (Haiku only, low budget)
@@ -287,16 +287,16 @@ Quando crei un utente, puoi specificare quali modelli può usare:
 
 ---
 
-## Usando curl direttamente
+## Using curl directly
 
-Se preferisci non usare lo script:
+If you prefer not to use the script:
 
-> **⚠️ Importante**: Gli endpoint admin sono bloccati da CloudFront. Usa l'ALB diretto dall'interno della VPC.
+> **⚠️ Important**: Admin endpoints are blocked by CloudFront. Use ALB direct from within the VPC.
 
-### Creare utente
+### Create user
 
 ```bash
-# Via ALB (dall'interno della VPC) - FUNZIONA
+# Via ALB (from within the VPC) - WORKS
 curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/user/new" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
@@ -307,14 +307,14 @@ curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/user/n
     "models": ["claude-haiku-4-5"]
   }'
 
-# Via CloudFront - BLOCCATO (403 Forbidden)
+# Via CloudFront - BLOCKED (403 Forbidden)
 # curl -X POST "https://d18l8nt8fin3hz.cloudfront.net/user/new" ...
 ```
 
-### Generare API key
+### Generate API key
 
 ```bash
-# Via ALB (dall'interno della VPC)
+# Via ALB (from within the VPC)
 curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/key/generate" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
@@ -325,23 +325,23 @@ curl -X POST "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/key/ge
   }'
 ```
 
-### Listare utenti
+### List users
 
 ```bash
-# Via ALB (dall'interno della VPC)
+# Via ALB (from within the VPC)
 curl -X GET "http://kong-llm-gateway-poc-xxx.us-west-1.elb.amazonaws.com/user/list" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY"
 ```
 
 ---
 
-## Configurazione Database (Opzionale)
+## Database Configuration (Optional)
 
-Per abilitare user management completo, serve PostgreSQL.
+For full user management, PostgreSQL is required.
 
-### Opzione 1: RDS PostgreSQL
+### Option 1: RDS PostgreSQL
 
-Aggiungi al Terraform:
+Add to Terraform:
 
 ```hcl
 module "litellm_db" {
@@ -350,7 +350,7 @@ module "litellm_db" {
   identifier = "litellm-poc"
   engine     = "postgres"
   engine_version = "15"
-  instance_class = "db.t4g.micro"  # ~$12/mese
+  instance_class = "db.t4g.micro"  # ~$12/month
 
   allocated_storage = 20
   db_name           = "litellm"
@@ -362,24 +362,24 @@ module "litellm_db" {
 }
 ```
 
-Poi configura LiteLLM:
+Then configure LiteLLM:
 
 ```yaml
 general_settings:
   database_url: "postgresql://user:pass@host:5432/litellm"
 ```
 
-### Opzione 2: Aurora Serverless v2
+### Option 2: Aurora Serverless v2
 
-Per costi variabili basati sull'uso (~$0.06/ACU-hour).
+For variable costs based on usage (~$0.06/ACU-hour).
 
-### Costi stimati
+### Estimated costs
 
-| Opzione | Costo mensile |
-|---------|---------------|
+| Option | Monthly Cost |
+|--------|--------------|
 | RDS t4g.micro | ~$12-15 |
-| Aurora Serverless v2 | ~$5-20 (variabile) |
-| Nessun DB (master key only) | $0 |
+| Aurora Serverless v2 | ~$5-20 (variable) |
+| No DB (master key only) | $0 |
 
 ---
 
@@ -391,8 +391,8 @@ Per costi variabili basati sull'uso (~$0.06/ACU-hour).
 Internal Server Error, Database not connected
 ```
 
-**Causa**: LiteLLM non ha un database configurato.
-**Soluzione**: Usa la master key oppure configura PostgreSQL.
+**Cause**: LiteLLM does not have a database configured.
+**Solution**: Use master key or configure PostgreSQL.
 
 ### "Invalid API Key"
 
@@ -400,8 +400,8 @@ Internal Server Error, Database not connected
 Authentication Error: Invalid API Key
 ```
 
-**Causa**: La chiave non esiste o è scaduta.
-**Soluzione**: Verifica la chiave con `list-keys` o genera una nuova.
+**Cause**: The key does not exist or has expired.
+**Solution**: Verify the key with `list-keys` or generate a new one.
 
 ### "Budget exceeded"
 
@@ -409,12 +409,12 @@ Authentication Error: Invalid API Key
 Budget has been exceeded
 ```
 
-**Causa**: L'utente/key ha superato il budget.
-**Soluzione**: Aumenta il budget con `update-budget`.
+**Cause**: The user/key has exceeded their budget.
+**Solution**: Increase budget with `update-budget`.
 
 ---
 
-## Riferimenti
+## References
 
 - [LiteLLM Proxy Documentation](https://docs.litellm.ai/docs/simple_proxy)
 - [LiteLLM User Management](https://docs.litellm.ai/docs/proxy/users)
