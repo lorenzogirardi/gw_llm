@@ -1,0 +1,83 @@
+name: ECS Execute Command
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'ECS Service'
+        required: true
+        type: choice
+        options:
+          - litellm
+          - langfuse
+          - grafana
+          - victoria-metrics
+      command:
+        description: 'Command to execute'
+        required: true
+        type: choice
+        options:
+          - 'env'
+          - 'ps aux'
+          - 'df -h'
+          - 'cat /proc/meminfo'
+          - 'netstat -tlnp'
+          - 'curl -s localhost:4000/health/liveliness'
+          - 'curl -s localhost:3000/api/health'
+
+env:
+  AWS_REGION: us-west-1
+  ECS_CLUSTER: kong-llm-gateway-poc
+
+jobs:
+  exec:
+    name: Execute Command
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Session Manager plugin
+        run: |
+          curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
+          sudo dpkg -i session-manager-plugin.deb
+
+      - name: Get task ARN
+        id: task
+        run: |
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ inputs.service }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskArns[0]' --output text)
+
+          if [ "$TASK_ARN" == "None" ] || [ -z "$TASK_ARN" ]; then
+            echo "No running task found for service ${{ inputs.service }}"
+            exit 1
+          fi
+
+          echo "task_arn=$TASK_ARN" >> $GITHUB_OUTPUT
+          echo "Found task: $TASK_ARN"
+
+      - name: Execute command
+        run: |
+          echo "=== Executing: ${{ inputs.command }} ==="
+          echo "Service: ${{ inputs.service }}"
+          echo "Task: ${{ steps.task.outputs.task_arn }}"
+          echo ""
+
+          # Determine container name based on service
+          CONTAINER="${{ inputs.service }}"
+
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task ${{ steps.task.outputs.task_arn }} \
+            --container $CONTAINER \
+            --command "/bin/sh -c '${{ inputs.command }}'" \
+            --interactive \
+            --region ${{ env.AWS_REGION }} || echo "Note: ECS Exec may need to be enabled on the service"

@@ -1,0 +1,87 @@
+name: RDS Database Status
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-west-1
+
+jobs:
+  status:
+    name: Check RDS Status
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get RDS instances
+        run: |
+          echo "=== RDS Instances ==="
+          aws rds describe-db-instances \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[?contains(DBInstanceIdentifier, `kong-llm`) || contains(DBInstanceIdentifier, `litellm`)].{Name:DBInstanceIdentifier,Status:DBInstanceStatus,Class:DBInstanceClass,Engine:Engine,Storage:AllocatedStorage,Endpoint:Endpoint.Address}' \
+            --output table
+
+      - name: Get CloudWatch metrics
+        run: |
+          echo ""
+          echo "=== Database Metrics (last hour) ==="
+
+          DB_ID=$(aws rds describe-db-instances \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[?contains(DBInstanceIdentifier, `kong-llm`) || contains(DBInstanceIdentifier, `litellm`)].DBInstanceIdentifier' \
+            --output text | head -1)
+
+          if [ -n "$DB_ID" ]; then
+            echo "Database: $DB_ID"
+            echo ""
+
+            # CPU Utilization
+            echo "--- CPU Utilization (%) ---"
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/RDS \
+              --metric-name CPUUtilization \
+              --dimensions Name=DBInstanceIdentifier,Value=$DB_ID \
+              --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+              --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+              --period 300 \
+              --statistics Average \
+              --region ${{ env.AWS_REGION }} \
+              --query 'Datapoints | sort_by(@, &Timestamp) | [-3:]' \
+              --output table
+
+            # Database Connections
+            echo ""
+            echo "--- Database Connections ---"
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/RDS \
+              --metric-name DatabaseConnections \
+              --dimensions Name=DBInstanceIdentifier,Value=$DB_ID \
+              --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+              --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+              --period 300 \
+              --statistics Average \
+              --region ${{ env.AWS_REGION }} \
+              --query 'Datapoints | sort_by(@, &Timestamp) | [-3:]' \
+              --output table
+
+            # Free Storage Space
+            echo ""
+            echo "--- Free Storage (bytes) ---"
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/RDS \
+              --metric-name FreeStorageSpace \
+              --dimensions Name=DBInstanceIdentifier,Value=$DB_ID \
+              --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+              --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+              --period 300 \
+              --statistics Average \
+              --region ${{ env.AWS_REGION }} \
+              --query 'Datapoints | sort_by(@, &Timestamp) | [-1]' \
+              --output table
+          fi

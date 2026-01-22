@@ -1,0 +1,86 @@
+name: ECS Service Status
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-west-1
+  ECS_CLUSTER: kong-llm-gateway-poc
+
+jobs:
+  status:
+    name: Check ECS Status
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get cluster status
+        run: |
+          echo "=== ECS Cluster: ${{ env.ECS_CLUSTER }} ==="
+          echo ""
+
+      - name: Get services status
+        run: |
+          echo "=== Services Status ==="
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services litellm langfuse grafana victoria-metrics \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[*].{Service:serviceName,Status:status,Desired:desiredCount,Running:runningCount,Pending:pendingCount}' \
+            --output table
+
+      - name: Get running tasks
+        run: |
+          echo ""
+          echo "=== Running Tasks ==="
+          for service in litellm langfuse grafana victoria-metrics; do
+            TASK_ARN=$(aws ecs list-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service-name $service \
+              --region ${{ env.AWS_REGION }} \
+              --query 'taskArns[0]' --output text)
+
+            if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+              echo ""
+              echo "--- $service ---"
+              aws ecs describe-tasks \
+                --cluster ${{ env.ECS_CLUSTER }} \
+                --tasks "$TASK_ARN" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'tasks[0].{TaskId:taskArn,Status:lastStatus,Health:healthStatus,CPU:cpu,Memory:memory,StartedAt:startedAt}' \
+                --output table
+            fi
+          done
+
+      - name: Get recent events
+        run: |
+          echo ""
+          echo "=== Recent Events (last 5 per service) ==="
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services litellm langfuse grafana victoria-metrics \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[*].{Service:serviceName,Events:events[0:5]}' \
+            --output json | jq -r '.[] | "--- \(.Service) ---", (.Events[]? | "\(.createdAt): \(.message)"), ""'
+
+      - name: Get target health
+        run: |
+          echo ""
+          echo "=== ALB Target Health ==="
+          for tg in $(aws elbv2 describe-target-groups --region ${{ env.AWS_REGION }} \
+            --query "TargetGroups[?contains(TargetGroupName, 'kong-llm-gateway')].TargetGroupArn" --output text); do
+            TG_NAME=$(basename $tg | cut -d'/' -f1)
+            echo ""
+            echo "--- $TG_NAME ---"
+            aws elbv2 describe-target-health \
+              --target-group-arn "$tg" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'TargetHealthDescriptions[*].{Target:Target.Id,Port:Target.Port,Health:TargetHealth.State,Reason:TargetHealth.Reason}' \
+              --output table 2>/dev/null || echo "No targets"
+          done
