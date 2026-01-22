@@ -358,7 +358,7 @@ flowchart TB
 | Dashboard | Purpose | URL | Status |
 |-----------|---------|-----|--------|
 | **Grafana** - LLM Usage | Token tracking, costs, latency | `/grafana` | ✅ Working |
-| **Grafana** - Infrastructure | ECS, ALB, CloudFront metrics | `/grafana` | ✅ Working |
+| **Grafana** - Infrastructure | ECS, ALB, CloudFront, Langfuse, Victoria Metrics | `/grafana` | ✅ Working |
 | **Langfuse** - Traces | Request/response logging | `/langfuse/` | ✅ Working |
 | **Langfuse** - Generations | LLM call analysis | `/langfuse/` | ✅ Working |
 
@@ -439,7 +439,19 @@ histogram_quantile(0.95, sum(rate(litellm_llm_api_latency_metric_bucket[5m])) by
 | [infra/grafana](infra/grafana) | Grafana dashboards and provisioning |
 | [infra/README.md](infra/README.md) | Local development with Docker Compose |
 | [scripts/](scripts/) | User management scripts |
-| [.github/workflows](.github/workflows) | CI/CD pipelines |
+
+### GitHub Actions
+
+| Workflow | Description |
+|----------|-------------|
+| [ci.yml](.github/workflows/ci.yml) | CI pipeline: security, validate, build, deploy |
+| [terraform-plan.yml](.github/workflows/terraform-plan.yml) | Terraform plan on PRs |
+| [ecs-restart.yml](.github/workflows/ecs-restart.yml) | Restart ECS services |
+| [ecs-logs.yml](.github/workflows/ecs-logs.yml) | Download container logs |
+| [ecs-status.yml](.github/workflows/ecs-status.yml) | View cluster status |
+| [ecs-scale.yml](.github/workflows/ecs-scale.yml) | Scale ECS services |
+| [ecs-exec.yml](.github/workflows/ecs-exec.yml) | Execute commands in containers |
+| [rds-status.yml](.github/workflows/rds-status.yml) | Database status and metrics |
 
 ---
 
@@ -523,18 +535,34 @@ flowchart LR
         trivy[Trivy Scan]
         checkov[Checkov Scan]
         validate[TF Validate]
+        changes{Grafana<br/>changed?}
         build[Build Grafana]
         deploy[Deploy POC]
     end
 
     scan1 --> tf_plan
-    scan2 --> trivy --> checkov --> validate --> build --> deploy
+    scan2 --> trivy --> checkov --> validate --> changes
+    changes -->|Yes| build --> deploy
+    changes -->|No| skip[Skip]
 ```
 
 | Workflow | Description | Trigger |
 |----------|-------------|---------|
 | `ci.yml` | Security scan, Terraform validate, build, deploy | Push to main |
 | `terraform-plan.yml` | Terraform plan with PR comment | Pull requests |
+
+### Operational Workflows (Manual)
+
+| Workflow | Description | Inputs |
+|----------|-------------|--------|
+| `ecs-restart.yml` | Restart ECS services | service (or all) |
+| `ecs-logs.yml` | Download container logs | service, duration, filter |
+| `ecs-status.yml` | View cluster status | - |
+| `ecs-scale.yml` | Scale services (0-3 tasks) | service, count |
+| `ecs-exec.yml` | Execute debug commands | service, command |
+| `rds-status.yml` | Database metrics | - |
+
+> **Note**: Operational workflows require `poc` environment approval for security.
 
 ### Estimated Costs
 
