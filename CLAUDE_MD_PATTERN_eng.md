@@ -1,6 +1,6 @@
 # .claude Structuring Pattern
 
-Guide to structuring the `.claude` folder for Claude Code projects, based on the pattern developed for the Kong LLM Gateway project.
+Guide to structuring the `.claude` folder for Claude Code projects, based on the pattern developed for the Stargate LLM Gateway project.
 
 ---
 

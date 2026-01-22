@@ -1,8 +1,0 @@
-# Secrets
-.api-keys.txt
-*.secrets
-.env
-config/kong.yaml
-
-# Build artifacts
-*.log

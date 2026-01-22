@@ -73,14 +73,8 @@ variable "allowed_cidr_blocks" {
 }
 
 # -----------------------------------------------------------------------------
-# Kong Configuration
+# TLS Configuration
 # -----------------------------------------------------------------------------
-
-variable "kong_image" {
-  description = "Kong Docker image"
-  type        = string
-  default     = "kong:3.6"
-}
 
 variable "certificate_arn" {
   description = "ACM certificate ARN for HTTPS (optional)"

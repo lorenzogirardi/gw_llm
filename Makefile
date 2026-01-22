@@ -1,11 +1,13 @@
-# Kong LLM Gateway - Makefile
-# Multi-environment automation for local development and EKS deployment
+# Stargate LLM Gateway - Makefile
+#
+# DEPRECATED: This Makefile was for the old Kong architecture.
+# For local development, use: cd infra && docker-compose up -d
 #
 # Usage:
-#   make local/up      - Start local environment
-#   make local/down    - Stop local environment
-#   make eks/plan      - Terraform plan for EKS
-#   make eks/apply     - Terraform apply for EKS
+#   make local/up      - Start local environment (deprecated)
+#   make local/down    - Stop local environment (deprecated)
+#   make tf/plan       - Terraform plan for POC
+#   make tf/apply      - Terraform apply for POC
 
 .PHONY: help local/up local/down local/logs local/test local/shell \
         eks/plan eks/apply eks/deploy eks/status \
@@ -13,7 +15,9 @@
 
 # Default target
 help:
-	@echo "Kong LLM Gateway - Available Commands"
+	@echo "Stargate LLM Gateway - Commands (DEPRECATED)"
+	@echo ""
+	@echo "NOTE: This Makefile is deprecated. Use 'cd infra && docker-compose up -d' for local development."
 	@echo ""
 	@echo "LOCAL DEVELOPMENT:"
 	@echo "  make local/up        Start Docker Compose environment"

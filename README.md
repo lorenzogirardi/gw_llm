@@ -1,9 +1,9 @@
-# LiteLLM Gateway for AWS Bedrock
+# Stargate LLM Gateway
 
 ![CI](https://github.com/lorenzogirardi/gw_llm/actions/workflows/ci.yml/badge.svg)
 ![Terraform](https://github.com/lorenzogirardi/gw_llm/actions/workflows/terraform-plan.yml/badge.svg)
 
-OpenAI-compatible API Gateway for AWS Bedrock with user management, usage tracking, and cost monitoring.
+OpenAI-compatible LLM Gateway for AWS Bedrock with user management, usage tracking, and cost monitoring. Powered by LiteLLM.
 
 ## Table of Contents
 

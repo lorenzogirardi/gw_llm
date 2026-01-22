@@ -1,12 +1,9 @@
-# Kong LLM Gateway - Local Development Environment
-# Usage: docker-compose up -d
+# Stargate LLM Gateway - Local Development (DEPRECATED)
 #
-# Services:
-# - kong: API Gateway (port 8000/8443)
-# - postgres: Kong database
-# - mock-bedrock: Mock server for Bedrock API testing
-# - prometheus: Metrics collection
-# - grafana: Metrics visualization (port 3000)
+# NOTE: This file is DEPRECATED. It references the old Kong architecture.
+# For local development, use: cd infra && docker-compose up -d
+#
+# The LiteLLM-based stack is in infra/docker-compose.yml
 
 version: '3.8'
 

@@ -1,19 +1,19 @@
 ---
 name: design-patterns
 description: >-
-  Architectural patterns for Kong Gateway and AWS Bedrock integration. Covers
-  plugin design, error handling, configuration, and testing patterns.
-  Triggers on "pattern", "architecture", "design pattern", "plugin structure",
-  "error handling", "anti-pattern", "best practice".
+  Architectural patterns for TypeScript/Node.js ecommerce project. Covers
+  dependency injection, error handling, configuration, testing patterns.
+  Triggers on "dependency injection", "DI pattern", "error handling",
+  "architectural pattern", "design pattern", "testing pattern", "anti-pattern".
 allowed-tools: Read
 ---
 
-# ABOUTME: Architectural patterns skill for Kong Gateway
-# ABOUTME: Covers plugin design, error handling, testing, and common anti-patterns
+# ABOUTME: Architectural patterns skill for Stargate LLM Gateway
+# ABOUTME: Covers design patterns, error handling, testing, and common anti-patterns
 
-# Design Patterns (Kong Gateway + Bedrock)
+# Design Patterns (Stargate LLM Gateway)
 
-Architectural patterns for Kong plugins and AWS Bedrock integration.
+Architectural patterns for the LLM Gateway and AWS Bedrock integration.
 
 ## Quick Reference
 

@@ -1,7 +1,7 @@
 ---
 name: spec-driven-dev
 description: >-
-  Spec-driven development framework for Kong Gateway features. Orchestrates from
+  Spec-driven development framework for ecommerce features. Orchestrates from
   intent to implementation via structured specs and task breakdown.
   Triggers on "/spec.plan", "/spec.refine", "/spec.clarify", "/spec.tasks",
   "/spec.run", "I want to build", "I want to add", "create spec", "feature spec",
@@ -9,7 +9,7 @@ description: >-
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, TodoWrite, Task
 ---
 
-# ABOUTME: Spec-driven development framework for Kong Gateway project
+# ABOUTME: Spec-driven development framework for Stargate LLM Gateway project
 # ABOUTME: Manages lifecycle: /spec.plan -> /spec.refine -> /spec.tasks -> /spec.run
 
 # Spec-Driven Development

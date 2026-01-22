@@ -1,4 +1,4 @@
-# LLM Gateway - POC Environment
+# Stargate LLM Gateway - POC Environment
 #
 # Low-cost POC deployment with:
 # - ECS Fargate (LiteLLM Gateway)
@@ -179,7 +179,7 @@ resource "aws_route" "private_nat" {
 }
 
 # -----------------------------------------------------------------------------
-# ECS Fargate (Kong Gateway)
+# ECS Fargate Cluster & ALB (shared infrastructure)
 # -----------------------------------------------------------------------------
 
 module "ecs" {
@@ -196,7 +196,6 @@ module "ecs" {
   allowed_cidr_blocks = var.allowed_cidr_blocks
 
   # Task configuration (minimal for POC)
-  kong_image    = var.kong_image
   task_cpu      = 256 # 0.25 vCPU
   task_memory   = 512 # 512 MB
   desired_count = 1

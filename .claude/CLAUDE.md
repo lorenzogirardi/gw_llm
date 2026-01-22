@@ -69,7 +69,7 @@
 
 ---
 
-# Tech Stack (LLM Gateway)
+# Tech Stack (Stargate LLM Gateway)
 
 | Layer | Technology |
 |-------|------------|

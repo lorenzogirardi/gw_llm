@@ -1,4 +1,4 @@
-# LiteLLM Gateway - Local Development
+# Stargate LLM Gateway - Local Development
 
 Docker Compose stack for local development of the LiteLLM gateway.
 

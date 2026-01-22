@@ -1,4 +1,4 @@
-# Prometheus Configuration for Kong LLM Gateway
+# Prometheus Configuration for Stargate LLM Gateway
 #
 # Local development configuration
 # Alerting is handled by Datadog (not AlertManager)
