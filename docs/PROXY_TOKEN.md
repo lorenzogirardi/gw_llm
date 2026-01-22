@@ -1,19 +1,19 @@
 # LiteLLM Gateway - Proxy & Token Metering
 
-Questo documento spiega come funziona il gateway LiteLLM e come vengono misurati i token per utente.
+This document explains how the LiteLLM gateway works and how tokens are measured per user.
 
-## Indice
+## Table of Contents
 
-- [Architettura Overview](#architettura-overview)
-- [Flusso di una Richiesta](#flusso-di-una-richiesta)
-- [Autenticazione e Utenti](#autenticazione-e-utenti)
+- [Architecture Overview](#architecture-overview)
+- [Request Flow](#request-flow)
+- [Authentication and Users](#authentication-and-users)
 - [Token Metering](#token-metering)
 - [Budget Management](#budget-management)
-- [Metriche Prometheus](#metriche-prometheus)
+- [Prometheus Metrics](#prometheus-metrics)
 
 ---
 
-## Architettura Overview
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -40,9 +40,9 @@ Questo documento spiega come funziona il gateway LiteLLM e come vengono misurati
 
 ---
 
-## Flusso di una Richiesta
+## Request Flow
 
-### Sequence Diagram Completo
+### Complete Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -110,9 +110,9 @@ sequenceDiagram
 
 ---
 
-## Autenticazione e Utenti
+## Authentication and Users
 
-### Struttura Utente
+### User Structure
 
 ```mermaid
 erDiagram
@@ -148,7 +148,7 @@ erDiagram
     USER ||--o{ USAGE : generates
 ```
 
-### Flusso Autenticazione
+### Authentication Flow
 
 ```mermaid
 flowchart TD
@@ -174,7 +174,7 @@ flowchart TD
 
 ## Token Metering
 
-### Come Vengono Contati i Token
+### How Tokens Are Counted
 
 ```mermaid
 flowchart LR
@@ -208,7 +208,7 @@ flowchart LR
     I --> K
 ```
 
-### Calcolo Costo
+### Cost Calculation
 
 ```mermaid
 flowchart TD
@@ -236,10 +236,10 @@ flowchart TD
     F --> G
 ```
 
-### Prezzi per Modello
+### Model Pricing
 
-| Modello | Input ($/1M tokens) | Output ($/1M tokens) | Esempio 1K tokens |
-|---------|---------------------|----------------------|-------------------|
+| Model | Input ($/1M tokens) | Output ($/1M tokens) | Example 1K tokens |
+|-------|---------------------|----------------------|-------------------|
 | Claude Haiku 4.5 | $0.25 | $1.25 | $0.0015 |
 | Claude Sonnet 4.5 | $3.00 | $15.00 | $0.018 |
 | Claude Opus 4.5 | $15.00 | $75.00 | $0.09 |
@@ -248,7 +248,7 @@ flowchart TD
 
 ## Budget Management
 
-### Ciclo di Vita del Budget
+### Budget Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -303,7 +303,7 @@ flowchart TD
     style I fill:#ffcccc
 ```
 
-### Reset del Budget
+### Budget Reset
 
 ```mermaid
 sequenceDiagram
@@ -330,9 +330,9 @@ sequenceDiagram
 
 ---
 
-## Metriche Prometheus
+## Prometheus Metrics
 
-### Metriche Esportate
+### Exported Metrics
 
 ```mermaid
 flowchart TB
@@ -363,39 +363,39 @@ flowchart TB
     E --- G
 ```
 
-### Struttura Metriche
+### Metrics Structure
 
-| Metrica | Tipo | Labels | Descrizione |
-|---------|------|--------|-------------|
-| `litellm_proxy_total_requests_metric_total` | Counter | user, model, status_code | Totale richieste |
-| `litellm_total_tokens_metric_total` | Counter | user, model, type (input/output) | Totale token |
-| `litellm_spend_metric_total` | Counter | user, model | Spesa in USD |
-| `litellm_llm_api_latency_metric_bucket` | Histogram | model | Latenza API |
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `litellm_proxy_total_requests_metric_total` | Counter | user, model, status_code | Total requests |
+| `litellm_total_tokens_metric_total` | Counter | user, model, type (input/output) | Total tokens |
+| `litellm_spend_metric_total` | Counter | user, model | Spend in USD |
+| `litellm_llm_api_latency_metric_bucket` | Histogram | model | API latency |
 
-### Query PromQL Utili
+### Useful PromQL Queries
 
 ```promql
-# Token totali per utente (ultime 24h)
+# Total tokens per user (last 24h)
 sum(increase(litellm_total_tokens_metric_total[24h])) by (user)
 
-# Spesa per utente (ultime 24h)
+# Spend per user (last 24h)
 sum(increase(litellm_spend_metric_total[24h])) by (user)
 
-# Richieste per modello
+# Requests per model
 sum(rate(litellm_proxy_total_requests_metric_total[5m])) by (model)
 
-# Latenza P95 per modello
+# P95 latency per model
 histogram_quantile(0.95,
   sum(rate(litellm_llm_api_latency_metric_bucket[5m])) by (le, model)
 )
 
-# Top 5 utenti per spesa
+# Top 5 users by spend
 topk(5, sum(litellm_spend_metric_total) by (user))
 ```
 
 ---
 
-## Flusso Completo: Da Request a Dashboard
+## Complete Flow: From Request to Dashboard
 
 ```mermaid
 flowchart TB
@@ -437,7 +437,7 @@ flowchart TB
     style G fill:#e8f5e9
 ```
 
-### Dashboard Grafana
+### Grafana Dashboard
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -468,9 +468,9 @@ flowchart TB
 
 ---
 
-## Riepilogo
+## Summary
 
-1. **Autenticazione**: API key → User lookup → Budget check
+1. **Authentication**: API key → User lookup → Budget check
 2. **Routing**: Model name mapping → Request transformation → SigV4 signing
 3. **Metering**: Token count from Bedrock response → Cost calculation → Spend update
 4. **Observability**: Prometheus metrics → Victoria Metrics → Grafana dashboards

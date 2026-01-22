@@ -1,32 +1,32 @@
 # LiteLLM Gateway - Local Development
 
-Docker Compose stack per sviluppo locale del gateway LiteLLM.
+Docker Compose stack for local development of the LiteLLM gateway.
 
-## Prerequisiti
+## Prerequisites
 
-- Docker e Docker Compose
-- AWS credentials con accesso a Bedrock
+- Docker and Docker Compose
+- AWS credentials with Bedrock access
 
 ## Quick Start
 
 ```bash
 cd infra
 
-# 1. Configura le variabili d'ambiente
+# 1. Configure environment variables
 cp .env.example .env
-vim .env  # Inserisci le tue credenziali AWS
+vim .env  # Enter your AWS credentials
 
-# 2. Avvia lo stack
+# 2. Start the stack
 docker-compose up -d
 
-# 3. Verifica che i servizi siano attivi
+# 3. Verify services are running
 docker-compose ps
 ```
 
-## Servizi
+## Services
 
-| Servizio | URL | Descrizione |
-|----------|-----|-------------|
+| Service | URL | Description |
+|---------|-----|-------------|
 | LiteLLM | http://localhost:4000 | API Gateway (OpenAI-compatible) |
 | Grafana | http://localhost:3000 | Dashboard (admin/admin) |
 | Victoria Metrics | http://localhost:8428 | Metrics storage |
@@ -51,47 +51,47 @@ curl -X POST http://localhost:4000/v1/chat/completions \
 curl http://localhost:4000/metrics/
 ```
 
-## Configurazione
+## Configuration
 
 ### LiteLLM
 
-Modifica `litellm-config.yaml` per:
-- Aggiungere/rimuovere modelli
-- Configurare callbacks
-- Modificare impostazioni
+Edit `litellm-config.yaml` to:
+- Add/remove models
+- Configure callbacks
+- Modify settings
 
 ### Grafana
 
-Le dashboard sono in `grafana/dashboards/`. Per aggiungere nuove dashboard:
-1. Crea il JSON in `grafana/dashboards/`
-2. Riavvia Grafana: `docker-compose restart grafana`
+Dashboards are in `grafana/dashboards/`. To add new dashboards:
+1. Create the JSON in `grafana/dashboards/`
+2. Restart Grafana: `docker-compose restart grafana`
 
-## Comandi Utili
+## Useful Commands
 
 ```bash
-# Visualizza log
+# View logs
 docker-compose logs -f litellm
 
-# Riavvia un servizio
+# Restart a service
 docker-compose restart litellm
 
-# Stop completo
+# Stop all services
 docker-compose down
 
-# Stop e rimuovi volumi
+# Stop and remove volumes
 docker-compose down -v
 ```
 
 ## Troubleshooting
 
-### LiteLLM non parte
-- Verifica le credenziali AWS in `.env`
-- Controlla i log: `docker-compose logs litellm`
+### LiteLLM not starting
+- Verify AWS credentials in `.env`
+- Check logs: `docker-compose logs litellm`
 
-### Metriche non visibili in Grafana
-- Verifica che Victoria Metrics stia scraping: `curl http://localhost:8428/targets`
-- Controlla che LiteLLM esponga metriche: `curl http://localhost:4000/metrics/`
+### Metrics not visible in Grafana
+- Verify Victoria Metrics is scraping: `curl http://localhost:8428/targets`
+- Check that LiteLLM exposes metrics: `curl http://localhost:4000/metrics/`
 
-### Errore Bedrock
-- Verifica che il modello sia disponibile nella tua region
-- Controlla le permission IAM per `bedrock:InvokeModel`
+### Bedrock error
+- Verify the model is available in your region
+- Check IAM permissions for `bedrock:InvokeModel`
