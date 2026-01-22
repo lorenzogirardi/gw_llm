@@ -217,6 +217,8 @@ curl -X POST "$ANTHROPIC_BASE_URL/v1/chat/completions" \
   }'
 ```
 
+![Claude Code Test](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-claude-code-test.png)
+
 ### View Dashboards
 
 | Dashboard | URL |
@@ -361,6 +363,28 @@ flowchart TB
 | **Grafana** - Infrastructure | ECS, ALB, CloudFront, Langfuse, Victoria Metrics | `/grafana` | ✅ Working |
 | **Langfuse** - Traces | Request/response logging | `/langfuse/` | ✅ Working |
 | **Langfuse** - Generations | LLM call analysis | `/langfuse/` | ✅ Working |
+
+#### Grafana - Infrastructure Metrics
+
+![Infrastructure Metrics](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-grafana-infrastructure-metrics.png)
+
+#### Grafana - Token Usage & Costs
+
+![Token Metrics](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-grafana-token-metrics.png)
+
+#### Grafana - Architecture Flow
+
+![Architecture Metrics](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-grafana-architecture-metrics.png)
+
+#### Grafana - PostgreSQL Metrics
+
+![SQL Metrics](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-grafana-sql-metrics.png)
+
+#### Langfuse - LLM Traces
+
+![Langfuse Metrics](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-langfuse-metrics.png)
+
+![Langfuse Trace](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-langfuse-trace.png)
 
 ### Metrics & Traces Integration
 
@@ -550,6 +574,10 @@ flowchart LR
 |----------|-------------|---------|
 | `ci.yml` | Security scan, Terraform validate, build, deploy | Push to main |
 | `terraform-plan.yml` | Terraform plan with PR comment | Pull requests |
+
+![GitHub Pipeline](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-github-pipeline.png)
+
+![GitHub Actions](https://res.cloudinary.com/ethzero/image/upload/v1769078071/ai/stargate-llm/stargate-github-actions.png)
 
 ### Operational Workflows (Manual)
 
