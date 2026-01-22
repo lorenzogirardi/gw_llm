@@ -103,12 +103,27 @@ jobs:
         working-directory: infra/terraform/environments/poc
         run: terraform validate
 
-  # Build Grafana image
+  # Check if Grafana files changed
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      grafana: ${{ steps.filter.outputs.grafana }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            grafana:
+              - 'infra/grafana/**'
+
+  # Build Grafana image (only if grafana files changed)
   build-grafana:
     name: Build Grafana Image
     runs-on: ubuntu-latest
-    needs: [security-scan, trivy-scan, checkov-scan]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [security-scan, trivy-scan, checkov-scan, changes]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.grafana == 'true'
     steps:
       - uses: actions/checkout@v6
 
@@ -144,13 +159,12 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/grafana-llm-gateway:${{ github.sha }}
           docker push ${{ env.ECR_REGISTRY }}/grafana-llm-gateway:latest
 
-  # Deploy to POC (manual trigger or main branch)
+  # Deploy to POC (only after successful Grafana build)
   deploy-poc:
     name: Deploy to POC
     runs-on: ubuntu-latest
     needs: [terraform-validate, build-grafana]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: poc
     steps:
       - uses: actions/checkout@v6
 
