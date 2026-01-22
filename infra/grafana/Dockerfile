@@ -1,5 +1,8 @@
 FROM grafana/grafana:12.3.1
 
+# Install Mermaid plugin for architecture diagrams
+RUN grafana cli plugins install jdbranham-diagram-panel
+
 # Copy provisioning configuration
 COPY provisioning/datasources/datasources.yaml /etc/grafana/provisioning/datasources/
 COPY provisioning/dashboards/dashboards.yaml /etc/grafana/provisioning/dashboards/

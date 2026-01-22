@@ -1127,15 +1127,14 @@
     },
     {
       "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 38 },
       "id": 201,
       "options": {
-        "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
-        "content": "```mermaid\nflowchart LR\n    subgraph Internet[\"Internet\"]\n        client[\"👤 Client\\nClaude Code / API\"]\n    end\n\n    subgraph Edge[\"Edge Layer\"]\n        cf[\"🌐 CloudFront\\nTLS + Cache\\nAdmin blocked\"]\n    end\n\n    subgraph VPC[\"AWS VPC\"]\n        alb[\"⚖️ ALB\\nLoad Balancer\"]\n        \n        subgraph ECS[\"ECS Fargate Cluster\"]\n            litellm[\"🤖 LiteLLM\\nAPI Proxy\\nAuth + Budget\"]\n            langfuse[\"📊 Langfuse\\nLLM Traces\"]\n            victoria[\"📈 Victoria\\nMetrics\"]\n            grafana[\"📉 Grafana\\nDashboards\"]\n        end\n        \n        rds[(\"🗄️ PostgreSQL\\nUsers & Keys\")]\n    end\n\n    subgraph AWS[\"AWS Services\"]\n        bedrock[\"🧠 Bedrock\\nClaude Models\"]\n    end\n\n    client -->|\"1. HTTPS\\n/v1/chat/completions\"| cf\n    cf -->|\"2. HTTP\"| alb\n    alb -->|\"3. Route\"| litellm\n    litellm -->|\"4. Auth\\nBudget Check\"| rds\n    litellm -->|\"5. InvokeModel\\nSigV4\"| bedrock\n    bedrock -->|\"6. Response\\n+ Tokens\"| litellm\n    litellm -->|\"7. Log Trace\"| langfuse\n    litellm -.->|\"8. Metrics\"| victoria\n    victoria -.->|\"9. Query\"| grafana\n    langfuse -->|\"Store\"| rds\n    litellm -->|\"10. Response\"| client\n\n    style client fill:#e1f5fe\n    style cf fill:#ffcccc\n    style litellm fill:#fff3e0\n    style bedrock fill:#f3e5f5\n    style rds fill:#336791,color:#fff\n    style langfuse fill:#e6f3ff\n    style grafana fill:#e8f5e9\n```",
-        "mode": "markdown"
+        "content": "flowchart LR\n    subgraph Internet[\"Internet\"]\n        client[\"Client\\nClaude Code\"]\n    end\n\n    subgraph Edge[\"Edge Layer\"]\n        cf[\"CloudFront\\nTLS + Cache\"]\n    end\n\n    subgraph VPC[\"AWS VPC\"]\n        alb[\"ALB\\nLoad Balancer\"]\n        \n        subgraph ECS[\"ECS Fargate\"]\n            litellm[\"LiteLLM\\nAPI Proxy\"]\n            langfuse[\"Langfuse\\nTraces\"]\n            victoria[\"Victoria\\nMetrics\"]\n            grafana[\"Grafana\\nDashboards\"]\n        end\n        \n        rds[(\"PostgreSQL\")]\n    end\n\n    subgraph AWS[\"AWS Services\"]\n        bedrock[\"Bedrock\\nClaude Models\"]\n    end\n\n    client -->|1. HTTPS| cf\n    cf -->|2. HTTP| alb\n    alb -->|3. Route| litellm\n    litellm -->|4. Auth| rds\n    litellm -->|5. Invoke| bedrock\n    bedrock -->|6. Response| litellm\n    litellm -->|7. Trace| langfuse\n    litellm -.->|8. Metrics| victoria\n    victoria -.->|9. Query| grafana\n    langfuse -->|Store| rds\n    litellm -->|10. Response| client\n\n    style client fill:#e1f5fe\n    style cf fill:#ffcccc\n    style litellm fill:#fff3e0\n    style bedrock fill:#f3e5f5\n    style rds fill:#336791\n    style langfuse fill:#e6f3ff\n    style grafana fill:#e8f5e9",
+        "mermaidTheme": "default"
       },
       "title": "Request Flow: Client → Bedrock",
-      "type": "text"
+      "type": "jdbranham-diagram-panel"
     }
   ],
   "refresh": "1m",
