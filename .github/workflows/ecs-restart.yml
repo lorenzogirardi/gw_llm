@@ -1,0 +1,70 @@
+name: ECS Restart Tasks
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'ECS Service to restart'
+        required: true
+        type: choice
+        options:
+          - litellm
+          - langfuse
+          - grafana
+          - victoria-metrics
+          - all
+
+env:
+  AWS_REGION: us-west-1
+  ECS_CLUSTER: kong-llm-gateway-poc
+
+jobs:
+  restart:
+    name: Restart ECS Service
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Restart single service
+        if: inputs.service != 'all'
+        run: |
+          echo "Restarting service: ${{ inputs.service }}"
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ inputs.service }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ inputs.service }} \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Service ${{ inputs.service }} restarted successfully"
+
+      - name: Restart all services
+        if: inputs.service == 'all'
+        run: |
+          for service in litellm langfuse grafana victoria-metrics; do
+            echo "Restarting service: $service"
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service $service \
+              --force-new-deployment \
+              --region ${{ env.AWS_REGION }}
+          done
+
+          echo "Waiting for all services to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services litellm langfuse grafana victoria-metrics \
+            --region ${{ env.AWS_REGION }}
+
+          echo "All services restarted successfully"

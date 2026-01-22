@@ -1,0 +1,107 @@
+name: ECS Download Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'ECS Service'
+        required: true
+        type: choice
+        options:
+          - litellm
+          - langfuse
+          - grafana
+          - victoria-metrics
+      duration:
+        description: 'Log duration'
+        required: true
+        type: choice
+        default: '1h'
+        options:
+          - 15m
+          - 1h
+          - 6h
+          - 24h
+      filter:
+        description: 'Filter pattern (optional)'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-west-1
+  ECS_CLUSTER: kong-llm-gateway-poc
+
+jobs:
+  download-logs:
+    name: Download Container Logs
+    runs-on: ubuntu-latest
+    environment: poc
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Calculate time range
+        id: time
+        run: |
+          case "${{ inputs.duration }}" in
+            15m) SECONDS=900 ;;
+            1h)  SECONDS=3600 ;;
+            6h)  SECONDS=21600 ;;
+            24h) SECONDS=86400 ;;
+          esac
+          START_TIME=$(( $(date +%s) - SECONDS ))000
+          echo "start_time=$START_TIME" >> $GITHUB_OUTPUT
+          echo "Log duration: ${{ inputs.duration }} (${SECONDS}s)"
+
+      - name: Download logs
+        run: |
+          LOG_GROUP="/ecs/${{ env.ECS_CLUSTER }}/${{ inputs.service }}"
+          OUTPUT_FILE="${{ inputs.service }}-logs-$(date +%Y%m%d-%H%M%S).txt"
+
+          echo "Fetching logs from: $LOG_GROUP"
+          echo "Start time: ${{ steps.time.outputs.start_time }}"
+
+          FILTER_ARGS=""
+          if [ -n "${{ inputs.filter }}" ]; then
+            FILTER_ARGS="--filter-pattern '${{ inputs.filter }}'"
+            echo "Filter: ${{ inputs.filter }}"
+          fi
+
+          aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time ${{ steps.time.outputs.start_time }} \
+            $FILTER_ARGS \
+            --query 'events[*].[timestamp,message]' \
+            --output text \
+            --region ${{ env.AWS_REGION }} > "$OUTPUT_FILE" || true
+
+          if [ -s "$OUTPUT_FILE" ]; then
+            LINES=$(wc -l < "$OUTPUT_FILE")
+            echo "Downloaded $LINES log lines to $OUTPUT_FILE"
+          else
+            echo "No logs found for the specified time range"
+            echo "No logs found" > "$OUTPUT_FILE"
+          fi
+
+          echo "output_file=$OUTPUT_FILE" >> $GITHUB_ENV
+
+      - name: Upload logs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-logs-${{ github.run_id }}
+          path: ${{ env.output_file }}
+          retention-days: 7
+
+      - name: Show log summary
+        run: |
+          echo "=== Log Summary ==="
+          echo "Service: ${{ inputs.service }}"
+          echo "Duration: ${{ inputs.duration }}"
+          echo "Lines: $(wc -l < "${{ env.output_file }}")"
+          echo ""
+          echo "=== Last 50 lines ==="
+          tail -50 "${{ env.output_file }}"
