@@ -57,6 +57,13 @@ variable "block_admin_endpoints" {
   default     = true
 }
 
+variable "admin_secret_header" {
+  description = "Secret value for X-Admin-Secret header to bypass admin endpoint blocking"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # -----------------------------------------------------------------------------
 # WAF
 # -----------------------------------------------------------------------------
@@ -71,6 +78,41 @@ variable "waf_rate_limit" {
   description = "WAF rate limit (requests per 5 minutes per IP)"
   type        = number
   default     = 2000
+}
+
+variable "enable_waf_common_rules" {
+  description = "Enable AWS Managed Common Rule Set (OWASP Top 10)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_waf_known_bad_inputs" {
+  description = "Enable AWS Managed Known Bad Inputs Rule Set (Log4j, Java deserialization)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_waf_ip_reputation" {
+  description = "Enable AWS Managed IP Reputation List"
+  type        = bool
+  default     = true
+}
+
+variable "enable_waf_bot_control" {
+  description = "Enable AWS Managed Bot Control Rule Set (additional cost)"
+  type        = bool
+  default     = false
+}
+
+# -----------------------------------------------------------------------------
+# Origin Security
+# -----------------------------------------------------------------------------
+
+variable "origin_verify_secret" {
+  description = "Secret header value to verify requests come from CloudFront (prevents direct ALB access)"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # -----------------------------------------------------------------------------

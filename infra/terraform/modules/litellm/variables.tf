@@ -84,6 +84,46 @@ variable "desired_count" {
   default     = 1
 }
 
+# -----------------------------------------------------------------------------
+# Auto-Scaling Configuration
+# -----------------------------------------------------------------------------
+
+variable "enable_autoscaling" {
+  description = "Enable auto-scaling for LiteLLM service"
+  type        = bool
+  default     = false
+}
+
+variable "min_capacity" {
+  description = "Minimum number of tasks (auto-scaling)"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of tasks (auto-scaling)"
+  type        = number
+  default     = 4
+}
+
+variable "autoscaling_cpu_target" {
+  description = "Target CPU utilization percentage for auto-scaling"
+  type        = number
+  default     = 70
+}
+
+variable "scale_in_cooldown" {
+  description = "Cooldown period in seconds before scaling in"
+  type        = number
+  default     = 300
+}
+
+variable "scale_out_cooldown" {
+  description = "Cooldown period in seconds before scaling out"
+  type        = number
+  default     = 60
+}
+
 variable "use_spot" {
   description = "Use Fargate Spot"
   type        = bool
@@ -151,4 +191,15 @@ variable "langfuse_secret_key_secret_arn" {
   description = "Secrets Manager ARN for Langfuse secret key"
   type        = string
   default     = ""
+}
+
+# -----------------------------------------------------------------------------
+# Origin Security
+# -----------------------------------------------------------------------------
+
+variable "origin_verify_secret" {
+  description = "Secret header value to verify requests come from CloudFront (X-Origin-Verify header)"
+  type        = string
+  default     = ""
+  sensitive   = true
 }

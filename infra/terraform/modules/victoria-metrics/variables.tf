@@ -69,8 +69,52 @@ variable "log_retention_days" {
   default     = 7
 }
 
+# -----------------------------------------------------------------------------
+# Task Configuration
+# -----------------------------------------------------------------------------
+
+variable "task_cpu" {
+  description = "Task CPU units"
+  type        = number
+  default     = 256
+}
+
+variable "task_memory" {
+  description = "Task memory in MB"
+  type        = number
+  default     = 512
+}
+
+variable "retention_days" {
+  description = "Victoria Metrics data retention in days"
+  type        = number
+  default     = 7
+}
+
+# -----------------------------------------------------------------------------
+# EFS Configuration (optional)
+# -----------------------------------------------------------------------------
+
+variable "efs_file_system_id" {
+  description = "EFS file system ID for persistent storage (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "efs_access_point_id" {
+  description = "EFS access point ID (required if efs_file_system_id is set)"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags"
   type        = map(string)
   default     = {}
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block (for restricting internal access)"
+  type        = string
+  default     = ""
 }

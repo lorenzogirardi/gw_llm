@@ -36,10 +36,27 @@ resource "aws_ecs_task_definition" "victoria" {
   family                   = "${var.project_name}-victoria-${var.environment}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 256
-  memory                   = 512
+  cpu                      = var.task_cpu
+  memory                   = var.task_memory
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
+
+  # EFS volume (optional)
+  dynamic "volume" {
+    for_each = var.efs_file_system_id != "" ? [1] : []
+    content {
+      name = "victoria-metrics-data"
+
+      efs_volume_configuration {
+        file_system_id     = var.efs_file_system_id
+        transit_encryption = "ENABLED"
+        authorization_config {
+          access_point_id = var.efs_access_point_id
+          iam             = "ENABLED"
+        }
+      }
+    }
+  }
 
   container_definitions = jsonencode([
     {
@@ -49,7 +66,7 @@ resource "aws_ecs_task_definition" "victoria" {
 
       entryPoint = ["sh", "-c"]
       command = [
-        "cat > /tmp/prometheus.yml << 'EOFCONFIG'\nglobal:\n  scrape_interval: 15s\nscrape_configs:\n${join("\n", [for target in var.scrape_targets : "  - job_name: ${target.job_name}\n    static_configs:\n      - targets: [\"${target.target}\"]\n    metrics_path: ${target.metrics_path}"])}${var.kong_metrics_host != "" ? "\n  - job_name: kong\n    static_configs:\n      - targets: [\"${var.kong_metrics_host}:8100\"]\n    metrics_path: /metrics" : ""}\nEOFCONFIG\n/victoria-metrics-prod -promscrape.config=/tmp/prometheus.yml -storageDataPath=/victoria-metrics-data -retentionPeriod=7d -httpListenAddr=:8428"
+        "cat > /tmp/prometheus.yml << 'EOFCONFIG'\nglobal:\n  scrape_interval: 15s\nscrape_configs:\n${join("\n", [for target in var.scrape_targets : "  - job_name: ${target.job_name}\n    static_configs:\n      - targets: [\"${target.target}\"]\n    metrics_path: ${target.metrics_path}"])}${var.kong_metrics_host != "" ? "\n  - job_name: kong\n    static_configs:\n      - targets: [\"${var.kong_metrics_host}:8100\"]\n    metrics_path: /metrics" : ""}\nEOFCONFIG\n/victoria-metrics-prod -promscrape.config=/tmp/prometheus.yml -storageDataPath=/victoria-metrics-data -retentionPeriod=${var.retention_days}d -httpListenAddr=:8428"
       ]
 
       portMappings = [
@@ -59,6 +76,15 @@ resource "aws_ecs_task_definition" "victoria" {
           protocol      = "tcp"
         }
       ]
+
+      # Mount EFS volume if configured
+      mountPoints = var.efs_file_system_id != "" ? [
+        {
+          sourceVolume  = "victoria-metrics-data"
+          containerPath = "/victoria-metrics-data"
+          readOnly      = false
+        }
+      ] : []
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -171,7 +197,8 @@ resource "aws_lb_target_group" "victoria" {
   tags = var.tags
 }
 
-# Listener on port 9090 for Prometheus API
+# Listener on port 9090 for Prometheus API (internal only - accessed by Grafana)
+# This listener is NOT exposed via CloudFront, only accessible within the VPC
 resource "aws_lb_listener" "victoria" {
   load_balancer_arn = var.alb_arn
   port              = 9090
@@ -224,4 +251,30 @@ resource "aws_iam_role" "task" {
   })
 
   tags = var.tags
+}
+
+# EFS access policy (only when EFS is configured)
+resource "aws_iam_role_policy" "efs_access" {
+  count = var.efs_file_system_id != "" ? 1 : 0
+
+  name = "efs-access"
+  role = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "elasticfilesystem:ClientMount",
+        "elasticfilesystem:ClientWrite",
+        "elasticfilesystem:ClientRootAccess"
+      ]
+      Resource = "arn:aws:elasticfilesystem:${data.aws_region.current.name}:*:file-system/${var.efs_file_system_id}"
+      Condition = {
+        StringEquals = {
+          "elasticfilesystem:AccessPointArn" = "arn:aws:elasticfilesystem:${data.aws_region.current.name}:*:access-point/${var.efs_access_point_id}"
+        }
+      }
+    }]
+  })
 }

@@ -129,7 +129,7 @@ resource "aws_ecs_service" "grafana" {
   name            = "grafana"
   cluster         = var.ecs_cluster_id
   task_definition = aws_ecs_task_definition.grafana.arn
-  desired_count   = 1
+  desired_count   = var.desired_count
 
   capacity_provider_strategy {
     capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
@@ -226,6 +226,17 @@ resource "aws_lb_listener_rule" "grafana" {
   condition {
     path_pattern {
       values = ["/grafana", "/grafana/*"]
+    }
+  }
+
+  # Require X-Origin-Verify header when origin_verify_secret is set
+  dynamic "condition" {
+    for_each = var.origin_verify_secret != "" ? [1] : []
+    content {
+      http_header {
+        http_header_name = "X-Origin-Verify"
+        values           = [var.origin_verify_secret]
+      }
     }
   }
 }

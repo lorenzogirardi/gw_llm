@@ -129,7 +129,7 @@ resource "aws_ecs_service" "langfuse" {
   name            = "langfuse"
   cluster         = var.ecs_cluster_id
   task_definition = aws_ecs_task_definition.langfuse.arn
-  desired_count   = 1
+  desired_count   = var.desired_count
 
   capacity_provider_strategy {
     capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
@@ -219,12 +219,68 @@ resource "aws_lb_listener" "langfuse" {
   port              = 8080
   protocol          = "HTTP"
 
+  # Default action: block if origin_verify_secret is set, otherwise forward
   default_action {
+    type = var.origin_verify_secret != "" ? "fixed-response" : "forward"
+
+    dynamic "fixed_response" {
+      for_each = var.origin_verify_secret != "" ? [1] : []
+      content {
+        content_type = "application/json"
+        message_body = jsonencode({
+          error = {
+            code    = "DIRECT_ACCESS_FORBIDDEN"
+            message = "Direct ALB access is not allowed. Use CloudFront."
+          }
+        })
+        status_code = "403"
+      }
+    }
+
+    target_group_arn = var.origin_verify_secret == "" ? aws_lb_target_group.langfuse.arn : null
+  }
+
+  tags = var.tags
+}
+
+# Listener rule to forward when X-Origin-Verify header is present
+resource "aws_lb_listener_rule" "langfuse_verified" {
+  count = var.origin_verify_secret != "" ? 1 : 0
+
+  listener_arn = aws_lb_listener.langfuse.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.langfuse.arn
   }
 
-  tags = var.tags
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [var.origin_verify_secret]
+    }
+  }
+}
+
+# Listener rule to allow internal VPC traffic without X-Origin-Verify
+# This enables LiteLLM callbacks to Langfuse for tracing
+resource "aws_lb_listener_rule" "langfuse_internal" {
+  count = var.origin_verify_secret != "" && var.vpc_cidr != "" ? 1 : 0
+
+  listener_arn = aws_lb_listener.langfuse.arn
+  priority     = 2
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.langfuse.arn
+  }
+
+  condition {
+    source_ip {
+      values = [var.vpc_cidr]
+    }
+  }
 }
 
 # NOTE: Port 8080 ingress is managed in ECS module's ALB security group

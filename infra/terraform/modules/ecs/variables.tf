@@ -7,7 +7,7 @@
 variable "project_name" {
   description = "Project name for resource naming"
   type        = string
-  default     = "kong-llm-gateway"
+  default     = "stargate-llm-gateway"
 }
 
 variable "environment" {
@@ -46,8 +46,21 @@ variable "allowed_cidr_blocks" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "restrict_to_cloudfront" {
+  description = "Restrict ALB access to CloudFront IPs only (uses AWS managed prefix list)"
+  type        = bool
+  default     = false
+}
+
+variable "origin_verify_secret" {
+  description = "Secret header value to verify requests come from CloudFront (X-Origin-Verify header)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "admin_cidr_blocks" {
-  description = "CIDR blocks allowed to access Kong Admin API"
+  description = "CIDR blocks allowed to access Admin API"
   type        = list(string)
   default     = ["10.0.0.0/8"]
 }
@@ -63,7 +76,7 @@ variable "vpc_cidr" {
 # -----------------------------------------------------------------------------
 
 variable "kong_image" {
-  description = "Kong Docker image"
+  description = "Legacy: API Gateway Docker image (not used, kept for compatibility)"
   type        = string
   default     = "kong:3.6"
 }

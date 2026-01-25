@@ -22,6 +22,8 @@ set -e
 # Configuration (override with environment variables)
 LITELLM_URL="${LITELLM_URL:-https://d18l8nt8fin3hz.cloudfront.net}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-}"
+ADMIN_SECRET="${ADMIN_SECRET:-}"
+AWS_REGION="${AWS_REGION:-us-west-1}"
 
 # Colors
 RED='\033[0;31m'
@@ -46,6 +48,18 @@ check_master_key() {
     fi
 }
 
+fetch_admin_secret() {
+    # Fetch admin secret from AWS Secrets Manager if not set
+    if [ -z "$ADMIN_SECRET" ]; then
+        info "Fetching admin secret from AWS Secrets Manager..."
+        ADMIN_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "kong-llm-gateway-poc/admin-header-secret" \
+            --region "$AWS_REGION" \
+            --query 'SecretString' \
+            --output text 2>/dev/null) || error "Failed to fetch admin secret from Secrets Manager"
+    fi
+}
+
 api_call() {
     local method="$1"
     local endpoint="$2"
@@ -56,11 +70,13 @@ api_call() {
         response=$(curl -s -X "$method" "${LITELLM_URL}${endpoint}" \
             -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
             -H "Content-Type: application/json" \
+            -H "X-Admin-Secret: ${ADMIN_SECRET}" \
             -d "$data")
     else
         response=$(curl -s -X "$method" "${LITELLM_URL}${endpoint}" \
             -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -H "X-Admin-Secret: ${ADMIN_SECRET}")
     fi
 
     # Check for errors
@@ -280,6 +296,8 @@ Commands:
 Environment Variables:
   LITELLM_URL         LiteLLM proxy URL (default: https://d18l8nt8fin3hz.cloudfront.net)
   LITELLM_MASTER_KEY  Master API key (required)
+  ADMIN_SECRET        Admin header secret (auto-fetched from AWS Secrets Manager if not set)
+  AWS_REGION          AWS region for Secrets Manager (default: us-west-1)
 
 Examples:
   # Create user with \$50 monthly budget
@@ -306,6 +324,7 @@ EOF
 main() {
     check_dependencies
     check_master_key
+    fetch_admin_secret
 
     local command="${1:-}"
     shift || true

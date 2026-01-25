@@ -74,6 +74,12 @@ variable "use_spot" {
   default     = true
 }
 
+variable "desired_count" {
+  description = "Desired number of Grafana tasks"
+  type        = number
+  default     = 1
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number
@@ -115,4 +121,15 @@ variable "amp_remote_write_endpoint" {
   description = "AMP remote write endpoint (used to derive query endpoint for datasource)"
   type        = string
   default     = ""
+}
+
+# -----------------------------------------------------------------------------
+# Origin Security
+# -----------------------------------------------------------------------------
+
+variable "origin_verify_secret" {
+  description = "Secret header value to verify requests come from CloudFront (X-Origin-Verify header)"
+  type        = string
+  default     = ""
+  sensitive   = true
 }

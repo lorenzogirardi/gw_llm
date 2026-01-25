@@ -1,11 +1,13 @@
-# ECS Fargate Module for Kong Gateway
+# ECS Fargate Module for Stargate LLM Gateway
 #
-# Deploys Kong Gateway on ECS Fargate with:
-# - ECS Cluster
-# - Task Definition with Kong container
-# - ECS Service with ALB
+# Provides shared ECS infrastructure:
+# - ECS Cluster (shared by all services)
+# - Application Load Balancer (path-based routing)
 # - Security Groups
-# - CloudWatch Log Group
+# - CloudWatch Log Groups
+#
+# Note: Legacy Kong container definitions are kept for backward compatibility
+# but are not used in the current LiteLLM-based architecture.
 
 terraform {
   required_version = ">= 1.5.0"
@@ -294,52 +296,116 @@ resource "aws_security_group" "kong" {
   })
 }
 
+# CloudFront managed prefix list (for restricting ALB to CloudFront only)
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  count = var.restrict_to_cloudfront ? 1 : 0
+  name  = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name        = "${var.project_name}-alb-${var.environment}"
-  description = "Security group for Kong ALB"
+  description = "Security group for Stargate LLM Gateway ALB"
   vpc_id      = var.vpc_id
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidr_blocks
-    description = "HTTPS from allowed CIDRs"
+  # HTTPS - CloudFront only or allowed CIDRs
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [] : [1]
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_cidr_blocks
+      description = "HTTPS from allowed CIDRs"
+    }
   }
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidr_blocks
-    description = "HTTP from allowed CIDRs (redirect to HTTPS)"
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [1] : []
+    content {
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+      description     = "HTTPS from CloudFront only"
+    }
   }
 
-  # Metrics port (for Grafana - open for POC)
-  ingress {
-    from_port   = 8100
-    to_port     = 8100
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Kong metrics (POC - open)"
+  # HTTP - CloudFront only or allowed CIDRs
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [] : [1]
+    content {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_cidr_blocks
+      description = "HTTP from allowed CIDRs"
+    }
   }
 
-  # Victoria Metrics (Prometheus API)
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [1] : []
+    content {
+      from_port       = 80
+      to_port         = 80
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+      description     = "HTTP from CloudFront only"
+    }
+  }
+
+  # Metrics port - CloudFront only or open
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [] : [1]
+    content {
+      from_port   = 8100
+      to_port     = 8100
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "LiteLLM metrics (POC - open)"
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [1] : []
+    content {
+      from_port       = 8100
+      to_port         = 8100
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+      description     = "LiteLLM metrics from CloudFront only"
+    }
+  }
+
+  # Victoria Metrics - Internal only (Grafana queries this from within VPC)
   ingress {
     from_port   = 9090
     to_port     = 9090
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Victoria Metrics API (POC - open)"
+    cidr_blocks = [var.vpc_cidr]
+    description = "Victoria Metrics API (internal VPC only)"
   }
 
-  # Langfuse (for CloudFront)
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Langfuse (POC - open)"
+  # Langfuse - CloudFront only or open
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [] : [1]
+    content {
+      from_port   = 8080
+      to_port     = 8080
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Langfuse (POC - open)"
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.restrict_to_cloudfront ? [1] : []
+    content {
+      from_port       = 8080
+      to_port         = 8080
+      protocol        = "tcp"
+      prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+      description     = "Langfuse from CloudFront only"
+    }
   }
 
   egress {
@@ -367,6 +433,10 @@ resource "aws_lb" "kong" {
   subnets            = var.public_subnet_ids
 
   enable_deletion_protection = var.enable_deletion_protection
+
+  # Security: Drop requests with invalid HTTP headers
+  # Prevents header injection attacks and malformed requests
+  drop_invalid_header_fields = true
 
   tags = var.tags
 }
@@ -412,11 +482,26 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Default action: block if origin_verify_secret is set, otherwise forward/redirect
   default_action {
-    type = var.certificate_arn != "" ? "redirect" : "forward"
+    type = var.origin_verify_secret != "" ? "fixed-response" : (var.certificate_arn != "" ? "redirect" : "forward")
+
+    dynamic "fixed_response" {
+      for_each = var.origin_verify_secret != "" ? [1] : []
+      content {
+        content_type = "application/json"
+        message_body = jsonencode({
+          error = {
+            code    = "DIRECT_ACCESS_FORBIDDEN"
+            message = "Direct ALB access is not allowed. Use CloudFront."
+          }
+        })
+        status_code = "403"
+      }
+    }
 
     dynamic "redirect" {
-      for_each = var.certificate_arn != "" ? [1] : []
+      for_each = var.origin_verify_secret == "" && var.certificate_arn != "" ? [1] : []
       content {
         port        = "443"
         protocol    = "HTTPS"
@@ -424,7 +509,7 @@ resource "aws_lb_listener" "http" {
       }
     }
 
-    target_group_arn = var.certificate_arn == "" ? aws_lb_target_group.kong.arn : null
+    target_group_arn = var.origin_verify_secret == "" && var.certificate_arn == "" ? aws_lb_target_group.kong.arn : null
   }
 }
 

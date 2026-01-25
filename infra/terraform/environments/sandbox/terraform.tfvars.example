@@ -1,0 +1,86 @@
+# Sandbox Environment - Example Variables
+#
+# Copy this file to terraform.tfvars and fill in the values
+# DO NOT commit terraform.tfvars to git (contains secrets)
+
+# -----------------------------------------------------------------------------
+# Required Secrets (must be created in AWS Secrets Manager us-east-1)
+# -----------------------------------------------------------------------------
+
+# LiteLLM master key for API authentication
+litellm_master_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/litellm-master-key-XXXXXX"
+
+# Langfuse secrets
+langfuse_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/langfuse-database-url-XXXXXX"
+langfuse_nextauth_secret_arn     = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/langfuse-nextauth-secret-XXXXXX"
+langfuse_salt_secret_arn         = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/langfuse-salt-XXXXXX"
+
+# Langfuse integration with LiteLLM (for tracing)
+langfuse_public_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/langfuse-public-key-XXXXXX"
+langfuse_secret_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/langfuse-secret-key-XXXXXX"
+
+# Origin verification secret (REQUIRED - prevents direct ALB access bypass)
+# Generate a random 32+ character string for this secret
+origin_verify_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/origin-verify-secret-XXXXXX"
+
+# -----------------------------------------------------------------------------
+# Optional Secrets
+# -----------------------------------------------------------------------------
+
+# Grafana admin password (leave empty to use default admin/admin)
+grafana_admin_password_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/grafana-admin-password-XXXXXX"
+
+# Admin header secret for CloudFront admin endpoint protection
+admin_header_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:stargate-sandbox/admin-header-secret-XXXXXX"
+
+# -----------------------------------------------------------------------------
+# VPC Configuration (defaults are fine for new deployment)
+# -----------------------------------------------------------------------------
+
+# aws_region = "us-east-1"
+# vpc_cidr = "10.20.0.0/16"
+# availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# -----------------------------------------------------------------------------
+# Service Sizing (defaults are production-ready for 100 users)
+# -----------------------------------------------------------------------------
+
+# LiteLLM - 2 vCPU, 4GB RAM, 2-6 replicas with auto-scaling
+# litellm_task_cpu      = 2048
+# litellm_task_memory   = 4096
+# litellm_desired_count = 2
+# litellm_min_capacity  = 2
+# litellm_max_capacity  = 6
+
+# Grafana - 0.5 vCPU, 1GB RAM, 2 replicas
+# grafana_task_cpu      = 512
+# grafana_task_memory   = 1024
+# grafana_desired_count = 2
+
+# Langfuse - 1 vCPU, 2GB RAM, 2 replicas
+# langfuse_task_cpu      = 1024
+# langfuse_task_memory   = 2048
+# langfuse_desired_count = 2
+
+# Victoria Metrics - 0.5 vCPU, 1GB RAM, 30 days retention
+# victoria_metrics_task_cpu       = 512
+# victoria_metrics_task_memory    = 1024
+# victoria_metrics_retention_days = 30
+
+# -----------------------------------------------------------------------------
+# RDS Configuration (defaults are production-ready)
+# -----------------------------------------------------------------------------
+
+# rds_instance_class          = "db.r6g.large"
+# rds_allocated_storage       = 100
+# rds_max_allocated_storage   = 200
+# rds_multi_az                = true
+# rds_backup_retention_period = 7
+
+# -----------------------------------------------------------------------------
+# WAF Configuration (defaults enable all protections)
+# -----------------------------------------------------------------------------
+
+# enable_waf             = true
+# enable_waf_bot_control = true   # Additional ~$10/month
+# waf_rate_limit         = 1000   # Requests per 5 minutes per IP

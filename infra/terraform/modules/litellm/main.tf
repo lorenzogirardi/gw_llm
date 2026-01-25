@@ -259,6 +259,17 @@ resource "aws_lb_listener_rule" "litellm_api" {
       values = ["/v1/*", "/health/*", "/metrics", "/metrics/*"]
     }
   }
+
+  # Require X-Origin-Verify header when origin_verify_secret is set
+  dynamic "condition" {
+    for_each = var.origin_verify_secret != "" ? [1] : []
+    content {
+      http_header {
+        http_header_name = "X-Origin-Verify"
+        values           = [var.origin_verify_secret]
+      }
+    }
+  }
 }
 
 # Admin routes (/key/*, /user/*, /model/*, /spend/*)
@@ -274,6 +285,17 @@ resource "aws_lb_listener_rule" "litellm_admin" {
   condition {
     path_pattern {
       values = ["/key/*", "/user/*", "/model/*", "/spend/*"]
+    }
+  }
+
+  # Require X-Origin-Verify header when origin_verify_secret is set
+  dynamic "condition" {
+    for_each = var.origin_verify_secret != "" ? [1] : []
+    content {
+      http_header {
+        http_header_name = "X-Origin-Verify"
+        values           = [var.origin_verify_secret]
+      }
     }
   }
 }
@@ -359,4 +381,43 @@ resource "aws_iam_role_policy" "litellm_bedrock" {
       Resource = var.allowed_bedrock_models
     }]
   })
+}
+
+# -----------------------------------------------------------------------------
+# Auto-Scaling (optional)
+# -----------------------------------------------------------------------------
+
+# Get ECS cluster name from cluster ID
+data "aws_ecs_cluster" "main" {
+  cluster_name = split("/", var.ecs_cluster_id)[1]
+}
+
+resource "aws_appautoscaling_target" "litellm" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = var.max_capacity
+  min_capacity       = var.min_capacity
+  resource_id        = "service/${data.aws_ecs_cluster.main.cluster_name}/${aws_ecs_service.litellm.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "litellm_cpu" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${var.project_name}-litellm-cpu-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.litellm[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.litellm[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.litellm[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+
+    target_value       = var.autoscaling_cpu_target
+    scale_in_cooldown  = var.scale_in_cooldown
+    scale_out_cooldown = var.scale_out_cooldown
+  }
 }

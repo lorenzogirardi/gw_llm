@@ -22,10 +22,25 @@ resource "aws_cloudfront_function" "block_admin" {
 
   name    = "${var.project_name}-${var.environment}-block-admin"
   runtime = "cloudfront-js-2.0"
-  comment = "Block admin endpoints from public access"
+  comment = "Block admin endpoints unless X-Admin-Secret header is present"
 
   code = <<-EOF
 function handler(event) {
+  var request = event.request;
+  var headers = request.headers;
+
+  // Check for admin secret header
+  var adminSecret = headers['x-admin-secret'];
+  var expectedSecret = '${var.admin_secret_header}';
+
+  // If secret header matches, allow the request
+  if (adminSecret && adminSecret.value === expectedSecret && expectedSecret !== '') {
+    // Remove the secret header before forwarding to origin
+    delete request.headers['x-admin-secret'];
+    return request;
+  }
+
+  // Block request
   return {
     statusCode: 403,
     statusDescription: 'Forbidden',
@@ -34,7 +49,7 @@ function handler(event) {
     },
     body: JSON.stringify({
       error: {
-        message: 'Admin endpoints not accessible via CloudFront. Use ALB directly from VPC.',
+        message: 'Admin endpoints require X-Admin-Secret header',
         code: 'FORBIDDEN'
       }
     })
@@ -91,6 +106,15 @@ resource "aws_cloudfront_distribution" "main" {
       origin_protocol_policy = "http-only" # ALB is HTTP for now
       origin_ssl_protocols   = ["TLSv1.2"]
     }
+
+    # Add secret header to verify requests come from CloudFront
+    dynamic "custom_header" {
+      for_each = var.origin_verify_secret != "" ? [1] : []
+      content {
+        name  = "X-Origin-Verify"
+        value = var.origin_verify_secret
+      }
+    }
   }
 
   # Origin: ALB (port 8080 - Langfuse)
@@ -105,6 +129,15 @@ resource "aws_cloudfront_distribution" "main" {
         https_port             = 443
         origin_protocol_policy = "http-only"
         origin_ssl_protocols   = ["TLSv1.2"]
+      }
+
+      # Add secret header to verify requests come from CloudFront
+      dynamic "custom_header" {
+        for_each = var.origin_verify_secret != "" ? [1] : []
+        content {
+          name  = "X-Origin-Verify"
+          value = var.origin_verify_secret
+        }
       }
     }
   }
@@ -131,7 +164,7 @@ resource "aws_cloudfront_distribution" "main" {
     compress               = true
   }
 
-  # Block /user/* admin endpoints (if enabled)
+  # Block /user/* admin endpoints (if enabled) - allow with secret header
   dynamic "ordered_cache_behavior" {
     for_each = var.block_admin_endpoints ? [1] : []
     content {
@@ -141,9 +174,10 @@ resource "aws_cloudfront_distribution" "main" {
       target_origin_id = "alb"
 
       forwarded_values {
-        query_string = false
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization", "Content-Type", "X-Admin-Secret"]
         cookies {
-          forward = "none"
+          forward = "all"
         }
       }
 
@@ -159,7 +193,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Block /key/* admin endpoints (if enabled)
+  # Block /key/* admin endpoints (if enabled) - allow with secret header
   dynamic "ordered_cache_behavior" {
     for_each = var.block_admin_endpoints ? [1] : []
     content {
@@ -169,9 +203,10 @@ resource "aws_cloudfront_distribution" "main" {
       target_origin_id = "alb"
 
       forwarded_values {
-        query_string = false
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization", "Content-Type", "X-Admin-Secret"]
         cookies {
-          forward = "none"
+          forward = "all"
         }
       }
 
@@ -187,7 +222,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Block /spend/* admin endpoints (if enabled)
+  # Block /spend/* admin endpoints (if enabled) - allow with secret header
   dynamic "ordered_cache_behavior" {
     for_each = var.block_admin_endpoints ? [1] : []
     content {
@@ -197,9 +232,10 @@ resource "aws_cloudfront_distribution" "main" {
       target_origin_id = "alb"
 
       forwarded_values {
-        query_string = false
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization", "Content-Type", "X-Admin-Secret"]
         cookies {
-          forward = "none"
+          forward = "all"
         }
       }
 
@@ -215,7 +251,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Block /model/* admin endpoints (if enabled)
+  # Block /model/* admin endpoints (if enabled) - allow with secret header
   dynamic "ordered_cache_behavior" {
     for_each = var.block_admin_endpoints ? [1] : []
     content {
@@ -225,9 +261,10 @@ resource "aws_cloudfront_distribution" "main" {
       target_origin_id = "alb"
 
       forwarded_values {
-        query_string = false
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization", "Content-Type", "X-Admin-Secret"]
         cookies {
-          forward = "none"
+          forward = "all"
         }
       }
 
@@ -403,13 +440,123 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     allow {}
   }
 
-  # Rate limiting rule
+  # Priority 1: IP Reputation List (block known malicious IPs first)
+  dynamic "rule" {
+    for_each = var.enable_waf_ip_reputation ? [1] : []
+    content {
+      name     = "aws-ip-reputation"
+      priority = 1
+
+      override_action {
+        none {}
+      }
+
+      statement {
+        managed_rule_group_statement {
+          name        = "AWSManagedRulesAmazonIpReputationList"
+          vendor_name = "AWS"
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${var.project_name}-ip-reputation"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+
+  # Priority 2: Common Rule Set (OWASP Top 10)
+  dynamic "rule" {
+    for_each = var.enable_waf_common_rules ? [1] : []
+    content {
+      name     = "aws-common-rules"
+      priority = 2
+
+      override_action {
+        none {}
+      }
+
+      statement {
+        managed_rule_group_statement {
+          name        = "AWSManagedRulesCommonRuleSet"
+          vendor_name = "AWS"
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${var.project_name}-common-rules"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+
+  # Priority 3: Known Bad Inputs (Log4j, Java deserialization)
+  dynamic "rule" {
+    for_each = var.enable_waf_known_bad_inputs ? [1] : []
+    content {
+      name     = "aws-known-bad-inputs"
+      priority = 3
+
+      override_action {
+        none {}
+      }
+
+      statement {
+        managed_rule_group_statement {
+          name        = "AWSManagedRulesKnownBadInputsRuleSet"
+          vendor_name = "AWS"
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${var.project_name}-known-bad-inputs"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+
+  # Priority 4: Bot Control (additional cost ~$10/month)
+  dynamic "rule" {
+    for_each = var.enable_waf_bot_control ? [1] : []
+    content {
+      name     = "aws-bot-control"
+      priority = 4
+
+      override_action {
+        none {}
+      }
+
+      statement {
+        managed_rule_group_statement {
+          name        = "AWSManagedRulesBotControlRuleSet"
+          vendor_name = "AWS"
+
+          managed_rule_group_configs {
+            aws_managed_rules_bot_control_rule_set {
+              inspection_level = "COMMON"
+            }
+          }
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${var.project_name}-bot-control"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+
+  # Priority 5: Rate limiting
   rule {
     name     = "rate-limit"
-    priority = 1
+    priority = 5
 
-    override_action {
-      none {}
+    action {
+      block {}
     }
 
     statement {
@@ -422,29 +569,6 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.project_name}-rate-limit"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  # AWS Managed Rules - Common Rule Set
-  rule {
-    name     = "aws-common-rules"
-    priority = 2
-
-    override_action {
-      none {}
-    }
-
-    statement {
-      managed_rule_group_statement {
-        name        = "AWSManagedRulesCommonRuleSet"
-        vendor_name = "AWS"
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project_name}-common-rules"
       sampled_requests_enabled   = true
     }
   }

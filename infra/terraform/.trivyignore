@@ -1,0 +1,67 @@
+# Trivy Ignore File - Stargate LLM Gateway
+# Last Updated: 2025-01-25
+# Review Date: 2025-04-25 (quarterly review)
+
+# =============================================================================
+# AVD-AWS-0104: Unrestricted Egress (0.0.0.0/0)
+# =============================================================================
+# Justification: ECS Fargate services in private subnets require outbound
+# internet access via NAT Gateway to reach:
+# - AWS Bedrock API (https://bedrock.us-east-1.amazonaws.com)
+# - AWS Secrets Manager (https://secretsmanager.us-east-1.amazonaws.com)
+# - Amazon ECR (container image pulls)
+# - External APIs for LLM callbacks
+#
+# Mitigation: Services run in private subnets with no inbound internet access.
+# All outbound traffic goes through NAT Gateway with CloudWatch logging.
+# =============================================================================
+AVD-AWS-0104
+
+# =============================================================================
+# AVD-AWS-0054: HTTP Listener (not HTTPS)
+# =============================================================================
+# Justification: TLS termination occurs at CloudFront edge.
+# Traffic flow: Client --HTTPS--> CloudFront --HTTP--> ALB --HTTP--> ECS
+#
+# Security controls:
+# 1. CloudFront enforces HTTPS (TLS 1.2+) for all client connections
+# 2. ALB is protected by X-Origin-Verify header (403 without valid header)
+# 3. ALB security group restricts ingress to CloudFront prefix list
+# 4. Internal VPC traffic is isolated and encrypted at rest
+#
+# This is AWS recommended architecture for CloudFront + ALB.
+# See: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html
+# =============================================================================
+AVD-AWS-0054
+
+# =============================================================================
+# AVD-AWS-0011: CloudFront without WAF
+# =============================================================================
+# Justification: FALSE POSITIVE - WAF IS enabled via conditional:
+#   web_acl_id = var.enable_waf ? aws_wafv2_web_acl.main[0].arn : null
+#
+# Trivy cannot evaluate Terraform variables, so it sees null.
+# In sandbox/prod environments, enable_waf = true activates:
+# - AWS Managed Rules: CommonRuleSet (OWASP Top 10)
+# - AWS Managed Rules: KnownBadInputsRuleSet (Log4j, etc.)
+# - AWS Managed Rules: AmazonIpReputationList
+# - AWS Managed Rules: BotControlRuleSet
+# - Custom Rate Limiting: 1000 req/5min per IP
+# =============================================================================
+AVD-AWS-0011
+
+# =============================================================================
+# AVD-AWS-0053: Load Balancer Exposed Publicly
+# =============================================================================
+# Justification: ALB must be internet-facing for CloudFront origin.
+# However, direct access is blocked:
+#
+# Security controls:
+# 1. X-Origin-Verify header required (CloudFront adds automatically)
+# 2. Requests without valid header receive 403 Forbidden
+# 3. Security group allows only CloudFront managed prefix list
+# 4. WAF rules applied at CloudFront edge before reaching ALB
+#
+# Direct ALB access test: curl http://<alb-dns> returns 403
+# =============================================================================
+AVD-AWS-0053

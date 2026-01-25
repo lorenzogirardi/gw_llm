@@ -94,6 +94,12 @@ variable "use_spot" {
   default     = true
 }
 
+variable "desired_count" {
+  description = "Desired number of Langfuse tasks"
+  type        = number
+  default     = 1
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number
@@ -104,4 +110,21 @@ variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
+}
+
+# -----------------------------------------------------------------------------
+# Origin Security
+# -----------------------------------------------------------------------------
+
+variable "origin_verify_secret" {
+  description = "Secret header value to verify requests come from CloudFront (X-Origin-Verify header)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block for allowing internal traffic (e.g., LiteLLM callbacks)"
+  type        = string
+  default     = ""
 }
