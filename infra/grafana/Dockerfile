@@ -1,4 +1,4 @@
-FROM grafana/grafana:12.3.1
+FROM grafana/grafana:12.3.2
 
 # Install Mermaid plugin for architecture diagrams
 RUN grafana cli plugins install jdbranham-diagram-panel
